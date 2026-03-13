@@ -49,7 +49,6 @@ The app also supports automatic generation and optional saving of derived QSM im
 <p align="center">
   <img src="docs/images/path-setup.png" alt="Path Setup" width="45%">
 </p>
----
 
 ## Key Features
 
