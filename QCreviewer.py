@@ -47,7 +47,7 @@ FILE_NAMES = {
     "cortical_qsm_cube": "QSM_TOTAL_mcpc3Ds_chi_SFCR_Avg_wGDC_cortical_expanded.nii.gz",
     "subcortical_qsm":   "QSM_TOTAL_mcpc3Ds_chi_SFCR_Avg_wGDC_subcortical_expanded.nii.gz",
 }
-SAVE_GENERATED_MASKED_QSM = False
+SAVE_GENERATED_MASKED_QSM = True
 SUBCORTICAL_MARGIN        = 3
 CORTICAL_DILATION_ITER    = 2
 DEFAULT_LEVEL             = 0.0
