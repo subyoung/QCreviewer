@@ -57,6 +57,7 @@ FILE_NAMES = {
     "segmentation":      "T1_SynthSeg_relabeled_corrected_to_SWI.nii.gz",
     "subcortical_label": "QSM_TOTAL_mcpc3Ds_chi_SFCR_Avg_wGDC_labels_a2.nii.gz",
     "cortical_qsm":      "QSM_TOTAL_mcpc3Ds_chi_SFCR_Avg_wGDC_cortical_dilated.nii.gz",
+    "cortical_qsm_cube": "QSM_TOTAL_mcpc3Ds_chi_SFCR_Avg_wGDC_cortical_expanded.nii.gz",
     "subcortical_qsm":   "QSM_TOTAL_mcpc3Ds_chi_SFCR_Avg_wGDC_subcortical_expanded.nii.gz",
 }
 SAVE_GENERATED_MASKED_QSM = False
@@ -233,6 +234,7 @@ QComboBox QAbstractItemView {{
     selection-background-color: {_C_ACCENT}; font-size: 10pt;
 }}
 """
+ZOOM_PRESETS = [25, 50, 75, 100, 125, 150, 200, 300]
 # ─────────────────────────────────────────────────────────────────────────────
 # Data classes
 # ─────────────────────────────────────────────────────────────────────────────
@@ -244,6 +246,7 @@ class CasePaths:
     segmentation:      str
     subcortical_label: str
     cortical_qsm:      Optional[str] = None
+    cortical_qsm_cube: Optional[str] = None
     subcortical_qsm:   Optional[str] = None
 @dataclass
 class QCRecord:
@@ -259,6 +262,8 @@ class AppConfig:
     cases_root: str
     output_csv: str
     file_names: Dict[str, str]
+    save_generated_qsm: bool = SAVE_GENERATED_MASKED_QSM
+    show_seg_in_derived_views: bool = False
 
 
 def _make_app_icon() -> QIcon:
@@ -332,12 +337,11 @@ class StartupConfigDialog(QDialog):
         logo.setPixmap(_make_app_icon().pixmap(28, 28))
         title = QLabel("Launch Settings")
         title.setStyleSheet(f"font-size: 15pt; font-weight: 700; color: {_C_ACCENT};")
-        subtitle = QLabel("Set the data folder, CSV file name, and the five file names before entering the labeling UI.")
+        subtitle = QLabel("Set the data folder, CSV file name, display options, and the six file names before entering the labeling UI.")
         subtitle.setStyleSheet(f"color: {_C_DIM};")
         title_col = QVBoxLayout()
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
-        title_row.addWidget(logo, 0, Qt.AlignTop)
         title_row.addLayout(title_col, 1)
         lay.addLayout(title_row)
         box = QGroupBox("Paths")
@@ -363,6 +367,7 @@ class StartupConfigDialog(QDialog):
             ("segmentation", "Segmentation"),
             ("subcortical_label", "Subcortical label"),
             ("cortical_qsm", "Cortical QSM"),
+            ("cortical_qsm_cube", "Cortical QSM (expanded)"),
             ("subcortical_qsm", "Subcortical QSM"),
         ]
         self.file_edits: Dict[str, QLineEdit] = {}
@@ -373,6 +378,15 @@ class StartupConfigDialog(QDialog):
             files_grid.addWidget(lbl, row, 0)
             files_grid.addWidget(edit, row, 1)
         lay.addWidget(files_box)
+        opt_box = QGroupBox("Startup options")
+        opt_lay = QVBoxLayout(opt_box)
+        self.save_generated_cb = QCheckBox("Save generated QSM files")
+        self.save_generated_cb.setChecked(SAVE_GENERATED_MASKED_QSM)
+        self.show_seg_derived_cb = QCheckBox("Show segmentation in cortical/subcortical QSM views")
+        self.show_seg_derived_cb.setChecked(False)
+        opt_lay.addWidget(self.save_generated_cb)
+        opt_lay.addWidget(self.show_seg_derived_cb)
+        lay.addWidget(opt_box)
         btns = QDialogButtonBox()
         self.continue_btn = btns.addButton("Continue", QDialogButtonBox.AcceptRole)
         reset_btn = btns.addButton("Reset defaults", QDialogButtonBox.ResetRole)
@@ -396,6 +410,8 @@ class StartupConfigDialog(QDialog):
         self.csv_edit.setText(os.path.basename(OUTPUT_CSV))
         for key, edit in self.file_edits.items():
             edit.setText(FILE_NAMES.get(key, ""))
+        self.save_generated_cb.setChecked(SAVE_GENERATED_MASKED_QSM)
+        self.show_seg_derived_cb.setChecked(False)
     def _on_continue(self):
         root = self.root_edit.text().strip()
         csv_name = self.csv_edit.text().strip()
@@ -417,12 +433,14 @@ class StartupConfigDialog(QDialog):
         file_names = {k: e.text().strip() for k, e in self.file_edits.items()}
         missing = [k for k, v in file_names.items() if not v]
         if missing:
-            QMessageBox.warning(self, "Missing file names", "Please fill in all five data file names.")
+            QMessageBox.warning(self, "Missing file names", "Please fill in all six data file names.")
             return
         self.config = AppConfig(
             cases_root=root,
             output_csv=os.path.join(root, csv_name),
             file_names=file_names,
+            save_generated_qsm=self.save_generated_cb.isChecked(),
+            show_seg_in_derived_views=self.show_seg_derived_cb.isChecked(),
         )
         self.accept()
 # ─────────────────────────────────────────────────────────────────────────────
@@ -447,6 +465,8 @@ def find_cases(root: str, file_names: Dict[str, str]) -> List[CasePaths]:
             subcortical_label=paths["subcortical_label"],
             cortical_qsm=paths["cortical_qsm"]
                 if os.path.exists(paths["cortical_qsm"]) else None,
+            cortical_qsm_cube=paths["cortical_qsm_cube"]
+                if os.path.exists(paths["cortical_qsm_cube"]) else None,
             subcortical_qsm=paths["subcortical_qsm"]
                 if os.path.exists(paths["subcortical_qsm"]) else None,
         ))
@@ -527,7 +547,8 @@ def ensure_3d(arr: np.ndarray, name: str) -> np.ndarray:
 def generate_subcortical_qsm(qsm, label, margin=3):
     mask = label > 0
     if not np.any(mask):
-        return np.zeros_like(qsm)
+        cube = np.zeros_like(label, dtype=np.uint8)
+        return np.zeros_like(qsm), cube
     coords = np.where(mask)
     slices = tuple(
         slice(max(0, coords[ax].min() - margin),
@@ -536,15 +557,24 @@ def generate_subcortical_qsm(qsm, label, margin=3):
     )
     cube = np.zeros_like(mask, dtype=np.uint8)
     cube[slices] = 1
-    return qsm * cube
+    return qsm * cube, cube
+
 def generate_cortical_qsm(qsm, seg, roi_dict, dilation_iter=2):
     labels = sorted({l for v in roi_dict.values() for l in v})
     return qsm * binary_dilation(np.isin(seg, labels), iterations=dilation_iter)
+
+def generate_cortical_qsm_cube(qsm, seg, roi_dict, cube_mask, dilation_iter=2):
+    labels = sorted({l for v in roi_dict.values() for l in v})
+    cortical_roi_mask = binary_dilation(np.isin(seg, labels), iterations=dilation_iter)
+    cube_outside_mask = ~(np.asarray(cube_mask) > 0)
+    combined_mask = cortical_roi_mask | cube_outside_mask
+    return qsm * combined_mask
 def load_case_data(case: CasePaths,
                    canonical_key: str,
                    save_generated: bool,
                    subcortical_margin: int,
                    cortical_dilation_iter: int,
+                   display_mode: str,
                    progress_cb: Callable[[int, str], None],
                    file_names: Dict[str, str]):
     """
@@ -568,36 +598,55 @@ def load_case_data(case: CasePaths,
     progress_cb(40, "Loading subcortical labels…")
     sub_lbl_img  = reorient_image(nib.load(case.subcortical_label), target_axcodes)
     sub_lbl_data = np.asarray(sub_lbl_img.get_fdata()).astype(np.int32)
-    cort_ok = case.cortical_qsm is not None and os.path.exists(case.cortical_qsm)
+    cort_roi_ok = case.cortical_qsm is not None and os.path.exists(case.cortical_qsm)
+    cort_cube_ok = case.cortical_qsm_cube is not None and os.path.exists(case.cortical_qsm_cube)
     sub_ok  = case.subcortical_qsm is not None and os.path.exists(case.subcortical_qsm)
-    progress_cb(55, "Loading cortical QSM…")
-    if cort_ok:
-        cort_data = np.asarray(
-            reorient_image(nib.load(case.cortical_qsm), target_axcodes).get_fdata(),
-            dtype=np.float32)
-    else:
-        progress_cb(60, "Generating cortical mask…")
-        cort_data = generate_cortical_qsm(
-            qsm_data, seg_data, ROI_LABEL_SYNTHSEG_COMBINED, cortical_dilation_iter
-        ).astype(np.float32)
-        if save_generated:
-            p = os.path.join(case.case_dir, file_names["cortical_qsm"])
-            nib.save(nib.Nifti1Image(cort_data, raw_img.affine, raw_img.header), p)
-            case.cortical_qsm = p; cort_ok = True
-    progress_cb(75, "Loading subcortical QSM…")
+    progress_cb(55, "Loading subcortical QSM…")
+    cube_mask = None
     if sub_ok:
         sub_data = np.asarray(
             reorient_image(nib.load(case.subcortical_qsm), target_axcodes).get_fdata(),
             dtype=np.float32)
+        cube_mask = (sub_data != 0).astype(np.uint8)
     else:
-        progress_cb(80, "Generating subcortical mask…")
-        sub_data = generate_subcortical_qsm(
+        progress_cb(62, "Generating subcortical mask…")
+        sub_data, cube_mask = generate_subcortical_qsm(
             qsm_data, sub_lbl_data, subcortical_margin
-        ).astype(np.float32)
+        )
+        sub_data = sub_data.astype(np.float32)
         if save_generated:
             p = os.path.join(case.case_dir, file_names["subcortical_qsm"])
             nib.save(nib.Nifti1Image(sub_data, raw_img.affine, raw_img.header), p)
             case.subcortical_qsm = p; sub_ok = True
+    progress_cb(72, "Loading cortical QSMs…")
+    if cort_roi_ok:
+        cort_roi_data = np.asarray(
+            reorient_image(nib.load(case.cortical_qsm), target_axcodes).get_fdata(),
+            dtype=np.float32)
+    else:
+        progress_cb(76, "Generating cortical ROI QSM…")
+        cort_roi_data = generate_cortical_qsm(
+            qsm_data, seg_data, ROI_LABEL_SYNTHSEG_COMBINED, cortical_dilation_iter
+        ).astype(np.float32)
+    if cort_cube_ok:
+        cort_cube_data = np.asarray(
+            reorient_image(nib.load(case.cortical_qsm_cube), target_axcodes).get_fdata(),
+            dtype=np.float32)
+    else:
+        progress_cb(82, "Generating cortical cube QSM…")
+        if cube_mask is None:
+            _, cube_mask = generate_subcortical_qsm(qsm_data, sub_lbl_data, subcortical_margin)
+        cort_cube_data = generate_cortical_qsm_cube(qsm_data, seg_data, ROI_LABEL_SYNTHSEG_COMBINED, cube_mask, cortical_dilation_iter).astype(np.float32)
+    if save_generated:
+        if not cort_roi_ok:
+            p = os.path.join(case.case_dir, file_names["cortical_qsm"])
+            nib.save(nib.Nifti1Image(cort_roi_data, raw_img.affine, raw_img.header), p)
+            case.cortical_qsm = p; cort_roi_ok = True
+        if not cort_cube_ok:
+            p = os.path.join(case.case_dir, file_names["cortical_qsm_cube"])
+            nib.save(nib.Nifti1Image(cort_cube_data, raw_img.affine, raw_img.header), p)
+            case.cortical_qsm_cube = p; cort_cube_ok = True
+    cort_data = cort_roi_data if display_mode == "ROI only" else cort_cube_data
     progress_cb(92, "Building seg overlays…")
     cortical_seg = np.where(
         np.isin(seg_data.astype(np.int32), _ALL_CORTICAL_LABELS),
@@ -606,10 +655,14 @@ def load_case_data(case: CasePaths,
     return dict(
         raw=ensure_3d(qsm_data,      "raw_qsm"),
         cort=ensure_3d(cort_data,    "cortical_qsm"),
+        cort_roi=ensure_3d(cort_roi_data, "cortical_qsm_roi"),
+        cort_cube=ensure_3d(cort_cube_data, "cortical_qsm_cube"),
         sub=ensure_3d(sub_data,      "subcortical_qsm"),
         cortical_seg=ensure_3d(cortical_seg,  "cortical_seg"),
         subcortical_seg=ensure_3d(sub_lbl_data, "subcortical_label"),
-        cort_ok=cort_ok, sub_ok=sub_ok,
+        cube_mask=ensure_3d(cube_mask.astype(np.uint8), "cube_mask"),
+        cort_ok=(cort_roi_ok if display_mode == "ROI only" else cort_cube_ok),
+        cort_roi_ok=cort_roi_ok, cort_cube_ok=cort_cube_ok, sub_ok=sub_ok,
         native_axcodes=native_axcodes,
         reoriented_affine=reoriented_affine,
         zooms=zooms,
@@ -630,16 +683,16 @@ def set_slice(v: ViewerModel, z: int, axis: int) -> None:
 # Wheel event filter
 # ─────────────────────────────────────────────────────────────────────────────
 class WheelScrollFilter(QObject):
-    def __init__(self, on_scroll: Callable[[int], None], parent: QObject = None):
+    def __init__(self, on_wheel: Callable[[object], None], parent: QObject = None):
         super().__init__(parent)
-        self._on_scroll = on_scroll
+        self._on_wheel = on_wheel
     def eventFilter(self, obj, event) -> bool:
         if event.type() == QEvent.Wheel:
-            dy = event.angleDelta().y()
-            if dy != 0:
-                self._on_scroll(-1 if dy > 0 else 1)
+            self._on_wheel(event)
             return True
         return False
+# ─────────────────────────────────────────────────────────────────────────────
+# Contrast dialog
 # ─────────────────────────────────────────────────────────────────────────────
 # Contrast dialog
 # ─────────────────────────────────────────────────────────────────────────────
@@ -694,19 +747,42 @@ class ImageCanvas(QWidget):
     def __init__(self, title: str, parent=None):
         super().__init__(parent)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._zoom_mode = "fit"   # "fit" or float multiplier relative to fit
+        self._updating_zoom_ui = False
         # title bar
         hdr = QWidget()
         hdr.setStyleSheet(f"background:{_C_HEADER};")
         hdr.setFixedHeight(32)
         hl = QHBoxLayout(hdr)
         hl.setContentsMargins(8, 0, 8, 0); hl.setSpacing(6)
-        lbl = QLabel(title)
-        lbl.setStyleSheet(f"font-weight:600; font-size:10pt; color:{_C_TEXT};")
+        self.title_label = QLabel(title)
+        self.title_label.setStyleSheet(f"font-weight:600; font-size:10pt; color:{_C_TEXT};")
+        self.title_right_layout = QHBoxLayout()
+        self.title_right_layout.setContentsMargins(0, 0, 0, 0)
+        self.title_right_layout.setSpacing(6)
+        zoom_lbl = QLabel("Zoom")
+        zoom_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:9pt;")
+        self.zoom_combo = QComboBox()
+        self.zoom_combo.setEditable(True)
+        self.zoom_combo.setInsertPolicy(QComboBox.NoInsert)
+        self.zoom_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.zoom_combo.setMinimumWidth(132)
+        self.zoom_combo.setMaximumWidth(168)
+        self.zoom_combo.addItem("Fit window")
+        for pct in ZOOM_PRESETS:
+            self.zoom_combo.addItem(f"{pct}%")
+        self.zoom_combo.setCurrentText("Fit window")
+        self.zoom_combo.lineEdit().editingFinished.connect(self._on_zoom_combo_edited)
+        self.zoom_combo.currentTextChanged.connect(self._on_zoom_combo_changed)
         self.sync_cb = QCheckBox("🔗 Sync")
         self.sync_cb.setChecked(True)
         self.sync_cb.setStyleSheet(_SYNC_CSS)
         self.sync_cb.setToolTip("Uncheck to scroll this view independently")
-        hl.addWidget(lbl, 1)
+        hl.addWidget(self.title_label)
+        hl.addLayout(self.title_right_layout)
+        hl.addStretch(1)
+        hl.addWidget(zoom_lbl)
+        hl.addWidget(self.zoom_combo)
         hl.addWidget(self.sync_cb)
         # direction bar
         dir_bar = QWidget()
@@ -748,15 +824,99 @@ class ImageCanvas(QWidget):
     def _on_layer_active(self, event=None):
         try: self.viewer_model.camera.mouse_zoom = False
         except AttributeError: pass
+    def set_title_right_widget(self, widget: Optional[QWidget]):
+        while self.title_right_layout.count():
+            item = self.title_right_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+        if widget is not None:
+            self.title_right_layout.addWidget(widget)
+
     @property
     def sync_enabled(self): return self.sync_cb.isChecked()
+    @staticmethod
+    def _parse_zoom_text(text: str):
+        s = (text or "").strip()
+        if not s:
+            return None
+        s_low = s.lower()
+        if s_low in {"fit", "fit window", "fitwindow", "window", "auto"}:
+            return "fit"
+        try:
+            if s.endswith('%'):
+                value = float(s[:-1].strip())
+            else:
+                value = float(s)
+                if value <= 10:
+                    value *= 100.0
+            if value <= 0:
+                return None
+            return value / 100.0
+        except Exception:
+            return None
+    @staticmethod
+    def _format_zoom_mode(mode) -> str:
+        if mode == "fit":
+            return "Fit window"
+        try:
+            pct = float(mode) * 100.0
+            if abs(pct - round(pct)) < 1e-6:
+                return f"{int(round(pct))}%"
+            return f"{pct:.1f}%"
+        except Exception:
+            return "Fit window"
+    def _set_zoom_combo_text(self, text: str):
+        self._updating_zoom_ui = True
+        self.zoom_combo.setCurrentText(text)
+        self._updating_zoom_ui = False
+    def _on_zoom_combo_changed(self, text: str):
+        if self._updating_zoom_ui:
+            return
+        parsed = self._parse_zoom_text(text)
+        if parsed is None:
+            return
+        self._zoom_mode = parsed
+        self._set_zoom_combo_text(self._format_zoom_mode(parsed))
+        self._emit_zoom_changed()
+    def _on_zoom_combo_edited(self):
+        text = self.zoom_combo.currentText()
+        parsed = self._parse_zoom_text(text)
+        if parsed is None:
+            self._set_zoom_combo_text(self._format_zoom_mode(self._zoom_mode))
+            return
+        self._zoom_mode = parsed
+        self._set_zoom_combo_text(self._format_zoom_mode(parsed))
+        self._emit_zoom_changed()
+    def _emit_zoom_changed(self):
+        parent = self.parent()
+        while parent is not None and not hasattr(parent, '_on_canvas_zoom_changed'):
+            parent = parent.parent()
+        if parent is not None:
+            parent._on_canvas_zoom_changed(self)
+    def set_zoom_mode(self, mode, apply: bool = False):
+        parsed = mode if mode == "fit" else self._parse_zoom_text(str(mode))
+        if parsed is None:
+            parsed = "fit"
+        self._zoom_mode = parsed
+        self._set_zoom_combo_text(self._format_zoom_mode(parsed))
+        if apply:
+            self._emit_zoom_changed()
+    def step_zoom_by(self, step: int, apply: bool = False):
+        if self._zoom_mode == "fit":
+            idx = ZOOM_PRESETS.index(100)
+        else:
+            curr_pct = float(self._zoom_mode) * 100.0
+            idx = min(range(len(ZOOM_PRESETS)), key=lambda i: abs(ZOOM_PRESETS[i] - curr_pct))
+        idx = max(0, min(idx + step, len(ZOOM_PRESETS) - 1))
+        self.set_zoom_mode(ZOOM_PRESETS[idx] / 100.0, apply=apply)
     def set_direction_labels(self, left, right, top, bottom):
         self._lbl_left.setText(f"← {left}")
         self._lbl_right.setText(f"{right} →")
         self._lbl_mid.setText(f"↑ {top}   ↓ {bottom}")
-    def install_wheel_filter(self, on_scroll):
+    def install_wheel_filter(self, on_wheel):
         target = self._canvas_native or self.qt_viewer
-        self._wheel_filter = WheelScrollFilter(on_scroll, parent=self)
+        self._wheel_filter = WheelScrollFilter(on_wheel, parent=self)
         target.installEventFilter(self._wheel_filter)
     @property
     def viewer(self): return self.viewer_model
@@ -776,7 +936,7 @@ class ImageCanvas(QWidget):
             try: self.viewer.camera.flip = (flip_v, flip_h, False)
             except Exception: pass
     def fit_to_shape(self, data_shape, dims_order, zooms=None):
-        """Fit camera to ~90 % of canvas.  Uses mm dimensions when zooms supplied."""
+        """Fit camera to ~90 % of canvas, then apply current zoom mode."""
         def _do():
             try:
                 ax_row = dims_order[-2]; ax_col = dims_order[-1]
@@ -790,15 +950,23 @@ class ImageCanvas(QWidget):
                 nat = self._canvas_native
                 vw = max(1, nat.width())  if nat else 400
                 vh = max(1, nat.height()) if nat else 400
-                self.viewer.camera.zoom = 0.90 * min(vw / phys_col, vh / phys_row)
+                fit_zoom = 0.90 * min(vw / phys_col, vh / phys_row)
+                if self._zoom_mode == "fit":
+                    self.viewer.camera.zoom = fit_zoom
+                else:
+                    self.viewer.camera.zoom = fit_zoom * float(self._zoom_mode)
             except Exception:
                 self.viewer.reset_view()
         QTimer.singleShot(0, _do)
 # ─────────────────────────────────────────────────────────────────────────────
 # Main window
 # ─────────────────────────────────────────────────────────────────────────────
+# Main window
+# ─────────────────────────────────────────────────────────────────────────────
 class ReviewerMainWindow(QMainWindow):
-    def __init__(self, cases: List[CasePaths], output_csv: str, file_names: Dict[str, str]):
+    def __init__(self, cases: List[CasePaths], output_csv: str, file_names: Dict[str, str],
+                 save_generated_qsm: bool = SAVE_GENERATED_MASKED_QSM,
+                 show_seg_in_derived_views: bool = False):
         super().__init__()
         self.setWindowTitle("QSM QC Reviewer")
         self.setWindowIcon(_make_app_icon())
@@ -807,6 +975,8 @@ class ReviewerMainWindow(QMainWindow):
         self.cases         = cases
         self.output_csv    = output_csv
         self.file_names    = dict(file_names)
+        self._initial_save_generated_qsm = bool(save_generated_qsm)
+        self._show_seg_in_derived_views = bool(show_seg_in_derived_views)
         self.results       = read_existing_results(output_csv)
         self.case_index    = 0
         self.current_saved = True
@@ -821,15 +991,26 @@ class ReviewerMainWindow(QMainWindow):
         self._flip_h            = False
         # Data
         self.raw_data = self.cortical_data = self.subcortical_data = None
+        self.cortical_roi_data = self.cortical_cube_data = self.cube_mask_data = None
         self._reoriented_affine = None
         self._zooms: Optional[tuple] = None
+        self._cortical_roi_source_ok = False
+        self._cortical_cube_source_ok = False
+        self._subcortical_source_ok = False
         # Layers
         self.raw_layer = self.seg_cortical_layer = None
         self.seg_subcortical_layer = self.cortical_layer = self.subcortical_layer = None
+        self.cortical_seg_layer = self.subcortical_seg_layer = None
         # Canvases
         self.raw_canvas         = ImageCanvas("Raw QSM + Segmentation")
         self.cortical_canvas    = ImageCanvas("Cortical QSM")
         self.subcortical_canvas = ImageCanvas("Subcortical QSM")
+        self.cortical_mode_combo = QComboBox()
+        self.cortical_mode_combo.addItems(["ROI only", "All regions outside subcortical"])
+        self.cortical_mode_combo.setCurrentText("All regions outside subcortical")
+        self.cortical_mode_combo.setMinimumWidth(220)
+        self.cortical_mode_combo.currentTextChanged.connect(self._on_cortical_display_mode_changed)
+        self.cortical_canvas.set_title_right_widget(self.cortical_mode_combo)
         # Contrast dialog
         self.contrast_dlg = ContrastDialog(self)
         self.contrast_dlg._apply_cb  = self.apply_contrast
@@ -861,10 +1042,16 @@ class ReviewerMainWindow(QMainWindow):
         act.setShortcut("Ctrl+L")
         act.triggered.connect(self.contrast_dlg.show)
         vm.addAction(act)
+        vm.addSeparator()
+        self._act_show_seg_derived = QAction(
+            "Show segmentation in cortical/subcortical QSM", self,
+            checkable=True, checked=self._show_seg_in_derived_views)
+        self._act_show_seg_derived.toggled.connect(self._on_show_seg_derived_toggled)
+        vm.addAction(self._act_show_seg_derived)
         tm = self.menuBar().addMenu("Tools")
         self._act_save_gen = QAction(
             "Save generated QSM files", self,
-            checkable=True, checked=SAVE_GENERATED_MASKED_QSM)
+            checkable=True, checked=self._initial_save_generated_qsm)
         tm.addAction(self._act_save_gen)
     # ── toolbar  (Orientation controls) ──────────────────────────────────────
     def _build_toolbar(self):
@@ -1003,6 +1190,7 @@ class ReviewerMainWindow(QMainWindow):
         hl = QVBoxLayout(hb)
         hotkey_lbl = QLabel(
             "Wheel    scroll slices (respects Sync)\n"
+            "Ctrl+Wheel zoom current view\n"
             "Ctrl+L   Contrast & Overlay\n"
             "C        Toggle cortical overlay\n"
             "S        Toggle subcortical overlay\n"
@@ -1039,7 +1227,7 @@ class ReviewerMainWindow(QMainWindow):
         cl.addWidget(sg)
         # Label accuracy
         LABEL_ACCURACY = ["0 – Good", "1 – Bad"]
-        lag = QGroupBox("Label Accuracy  (optional)")
+        lag = QGroupBox("Segmentation Accuracy  (optional)")
         laf = QFormLayout(lag); laf.setSpacing(8)
         self.cort_label_combo = QComboBox()
         self.sub_label_combo  = QComboBox()
@@ -1114,12 +1302,29 @@ class ReviewerMainWindow(QMainWindow):
     def _install_wheel_filters(self):
         for canvas in self._all_canvases():
             def make_cb(c):
-                def _on_scroll(delta):
-                    self._on_canvas_wheel(c, delta)
-                return _on_scroll
+                def _on_wheel(event):
+                    self._on_canvas_wheel(c, event)
+                return _on_wheel
             canvas.install_wheel_filter(make_cb(canvas))
-    def _on_canvas_wheel(self, source: ImageCanvas, delta: int):
+    def _on_canvas_zoom_changed(self, source: ImageCanvas):
+        data = None
+        if source is self.raw_canvas:
+            data = self.raw_data
+        elif source is self.cortical_canvas:
+            data = self.cortical_data
+        elif source is self.subcortical_canvas:
+            data = self.subcortical_data
+        if data is not None:
+            source.fit_to_shape(data.shape, self._dims_order, self._zooms)
+    def _on_canvas_wheel(self, source: ImageCanvas, event):
         if self._loading:
+            return
+        dy = event.angleDelta().y()
+        if dy == 0:
+            return
+        delta = -1 if dy > 0 else 1
+        if bool(event.modifiers() & Qt.ControlModifier):
+            source.step_zoom_by(delta, apply=True)
             return
         sa    = self._scroll_axis
         new_z = get_slice(source.viewer, sa) + delta
@@ -1158,6 +1363,46 @@ class ReviewerMainWindow(QMainWindow):
     def _set_all_slices_force(self, z: int):
         for c in self._all_canvases():
             set_slice(c.viewer, z, self._scroll_axis)
+    def _refresh_source_label(self):
+        mode = self.cortical_mode_combo.currentText() if hasattr(self, "cortical_mode_combo") else "ROI only"
+        cort_ok = self._cortical_roi_source_ok if mode == "ROI only" else self._cortical_cube_source_ok
+        self.source_label.setText(
+            f"Cortical ({mode}): {'file' if cort_ok else 'gen'}   "
+            f"Subcortical: {'file' if self._subcortical_source_ok else 'gen'}")
+
+    def _on_cortical_display_mode_changed(self, *_):
+        if self._loading or self.raw_data is None:
+            return
+        mode = self.cortical_mode_combo.currentText()
+        data = self.cortical_roi_data if mode == "ROI only" else self.cortical_cube_data
+        if data is None:
+            return
+        self.cortical_data = data
+        sc = self._zooms
+        current_z = get_slice(self.cortical_canvas.viewer, self._scroll_axis)
+        current_limits = (DEFAULT_LOW, DEFAULT_HIGH)
+        if self.cortical_layer is not None:
+            try:
+                current_limits = tuple(self.cortical_layer.contrast_limits)
+            except Exception:
+                pass
+        opacity = self.contrast_dlg.seg_opacity_spin.value()
+        seg_data = getattr(self, "_loaded_cortical_seg", None)
+        self.cortical_canvas.clear_layers()
+        self.cortical_layer = self.cortical_canvas.add_image(
+            data, name="cortical_qsm", colormap="gray",
+            contrast_limits=current_limits, scale=sc)
+        self.cortical_seg_layer = None
+        if seg_data is not None:
+            self.cortical_seg_layer = self.cortical_canvas.add_labels(
+                seg_data, name="cortical_labels",
+                opacity=opacity,
+                visible=self.cort_seg_cb.isChecked() and self._show_seg_in_derived_views,
+                scale=sc)
+        self._apply_orientation(force_mid=False)
+        set_slice(self.cortical_canvas.viewer, current_z, self._scroll_axis)
+        self._refresh_source_label()
+
     # ── orientation ───────────────────────────────────────────────────────────
     def _apply_orientation(self, force_mid: bool = False):
         orient_name   = self.orient_combo.currentText()
@@ -1237,12 +1482,25 @@ class ReviewerMainWindow(QMainWindow):
         self.status_label.setText("Status:  ✏ unsaved")
         self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:10pt;")
     def _update_seg_visibility(self, which, checked):
-        if which == "cortical" and self.seg_cortical_layer:
-            self.seg_cortical_layer.visible = checked
-        elif which == "subcortical" and self.seg_subcortical_layer:
-            self.seg_subcortical_layer.visible = checked
+        if which == "cortical":
+            if self.seg_cortical_layer:
+                self.seg_cortical_layer.visible = checked
+            if self.cortical_seg_layer:
+                self.cortical_seg_layer.visible = checked and self._show_seg_in_derived_views
+        elif which == "subcortical":
+            if self.seg_subcortical_layer:
+                self.seg_subcortical_layer.visible = checked
+            if self.subcortical_seg_layer:
+                self.subcortical_seg_layer.visible = checked and self._show_seg_in_derived_views
+    def _on_show_seg_derived_toggled(self, checked):
+        self._show_seg_in_derived_views = bool(checked)
+        if self.cortical_seg_layer is not None:
+            self.cortical_seg_layer.visible = self.cort_seg_cb.isChecked() and self._show_seg_in_derived_views
+        if self.subcortical_seg_layer is not None:
+            self.subcortical_seg_layer.visible = self.sub_seg_cb.isChecked() and self._show_seg_in_derived_views
     def _update_seg_opacity(self, value):
-        for lyr in (self.seg_cortical_layer, self.seg_subcortical_layer):
+        for lyr in (self.seg_cortical_layer, self.seg_subcortical_layer,
+                    self.cortical_seg_layer, self.subcortical_seg_layer):
             if lyr is not None: lyr.opacity = float(value)
     def apply_contrast(self, level, window, apply_all=True):
         lo, hi = level - window / 2, level + window / 2
@@ -1367,6 +1625,8 @@ class ReviewerMainWindow(QMainWindow):
         # Clear old layers immediately
         for c in self._all_canvases():
             c.clear_layers()
+        self.cortical_seg_layer = None
+        self.subcortical_seg_layer = None
         # Show progress bar, disable navigation
         self._progress_bar.setValue(0)
         self._progress_bar.setVisible(True)
@@ -1380,6 +1640,7 @@ class ReviewerMainWindow(QMainWindow):
                 save_generated=self._act_save_gen.isChecked(),
                 subcortical_margin=SUBCORTICAL_MARGIN,
                 cortical_dilation_iter=CORTICAL_DILATION_ITER,
+                display_mode=self.cortical_mode_combo.currentText(),
                 progress_cb=self._progress,
                 file_names=self.file_names,
             )
@@ -1397,6 +1658,9 @@ class ReviewerMainWindow(QMainWindow):
         sub  = data["sub"]
         self.raw_data             = raw
         self.cortical_data        = cort
+        self.cortical_roi_data    = data["cort_roi"]
+        self.cortical_cube_data   = data["cort_cube"]
+        self.cube_mask_data       = data["cube_mask"]
         self.subcortical_data     = sub
         self._reoriented_affine   = data["reoriented_affine"]
         self._zooms               = data["zooms"]
@@ -1412,12 +1676,20 @@ class ReviewerMainWindow(QMainWindow):
         self.seg_subcortical_layer = self.raw_canvas.add_labels(
             data["subcortical_seg"], name="subcortical_labels",
             opacity=opacity, visible=self.sub_seg_cb.isChecked(), scale=sc)
+        self._loaded_cortical_seg = data["cortical_seg"]
+        self._loaded_subcortical_seg = data["subcortical_seg"]
         self.cortical_layer = self.cortical_canvas.add_image(
             cort, name="cortical_qsm", colormap="gray",
             contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH), scale=sc)
+        self.cortical_seg_layer = self.cortical_canvas.add_labels(
+            data["cortical_seg"], name="cortical_labels",
+            opacity=opacity, visible=self.cort_seg_cb.isChecked() and self._show_seg_in_derived_views, scale=sc)
         self.subcortical_layer = self.subcortical_canvas.add_image(
             sub, name="subcortical_qsm", colormap="gray",
             contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH), scale=sc)
+        self.subcortical_seg_layer = self.subcortical_canvas.add_labels(
+            data["subcortical_seg"], name="subcortical_labels",
+            opacity=opacity, visible=self.sub_seg_cb.isChecked() and self._show_seg_in_derived_views, scale=sc)
         self._apply_orientation(force_mid=True)
         QTimer.singleShot(120, self._fit_all)
         # Restore QC fields
@@ -1451,9 +1723,11 @@ class ReviewerMainWindow(QMainWindow):
         else:
             self.status_label.setText("Status:  ✏ unsaved")
             self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:10pt;")
-        self.source_label.setText(
-            f"Cortical: {'file' if data['cort_ok'] else 'gen'}   "
-            f"Subcortical: {'file' if data['sub_ok'] else 'gen'}")
+        mode_label = self.cortical_mode_combo.currentText()
+        self._cortical_roi_source_ok = bool(data["cort_roi_ok"])
+        self._cortical_cube_source_ok = bool(data["cort_cube_ok"])
+        self._subcortical_source_ok = bool(data["sub_ok"])
+        self._refresh_source_label()
         nat_str  = " → ".join(data["native_axcodes"])
         ck       = self.canonical_combo.currentText()
         reor_str = f"  (→ {ck})" if ck != "Native" else ""
@@ -1494,13 +1768,15 @@ def main():
             None,
             "No valid cases found",
             "No valid cases were found under the selected data folder.\n"
-            "Please check the folder path and the five file names in the setup page.",
+            "Please check the folder path and the six file names in the setup page.",
         )
         return
     win = ReviewerMainWindow(
         cases=cases,
         output_csv=config.output_csv,
         file_names=config.file_names,
+        save_generated_qsm=config.save_generated_qsm,
+        show_seg_in_derived_views=config.show_seg_in_derived_views,
     )
     win.show()
     sys.exit(app.exec_())
