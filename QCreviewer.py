@@ -43,6 +43,7 @@ import pandas as pd
 from scipy.ndimage import binary_dilation
 
 from qtpy.QtCore import QObject, QEvent, QTimer, Qt
+from qtpy.QtGui import QFont
 from qtpy.QtWidgets import (
     QAction, QApplication, QCheckBox, QComboBox,
     QDialog, QDoubleSpinBox, QFormLayout, QFrame,
@@ -153,77 +154,89 @@ _C_WARN      = "#e08b3a"
 _C_SYNC_ON   = "#4a9eff"
 
 _GLOBAL_CSS = f"""
-QMainWindow, QWidget {{ background: {_C_BG}; color: {_C_TEXT}; font-family: Segoe UI, Arial, sans-serif; }}
-QToolBar {{ background: {_C_HEADER}; border-bottom: 1px solid {_C_BORDER}; spacing: 6px; padding: 3px 8px; }}
-QToolBar QLabel {{ color: {_C_DIM}; font-size: 11px; }}
+QMainWindow, QWidget {{
+    background: {_C_BG}; color: {_C_TEXT};
+    font-family: Segoe UI, Arial, sans-serif; font-size: 10pt;
+}}
+QToolBar {{
+    background: {_C_HEADER}; border-bottom: 1px solid {_C_BORDER};
+    spacing: 8px; padding: 4px 10px;
+}}
+QToolBar QLabel  {{ color: {_C_DIM}; font-size: 10pt; }}
 QToolBar QComboBox {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
-    border-radius: 3px; padding: 2px 6px; font-size: 11px; min-width: 120px;
+    border-radius: 4px; padding: 3px 10px; font-size: 10pt; min-width: 140px;
 }}
-QToolBar QComboBox::drop-down {{ border: none; width: 18px; }}
-QToolBar QCheckBox {{ color: {_C_TEXT}; font-size: 11px; }}
-QSplitter::handle {{ background: {_C_BORDER}; }}
-QSplitter::handle:horizontal {{ width: 4px; }}
-QSplitter::handle:vertical   {{ height: 4px; }}
+QToolBar QComboBox::drop-down {{ border: none; width: 20px; }}
+QToolBar QCheckBox {{ color: {_C_TEXT}; font-size: 10pt; }}
+QSplitter::handle           {{ background: {_C_BORDER}; }}
+QSplitter::handle:horizontal {{ width: 5px; }}
+QSplitter::handle:vertical   {{ height: 5px; }}
 QGroupBox {{
     border: 1px solid {_C_BORDER}; border-radius: 5px;
-    margin-top: 18px; padding-top: 6px;
-    font-size: 11px; font-weight: 600; color: {_C_ACCENT};
+    margin-top: 22px; padding-top: 8px;
+    font-size: 10pt; font-weight: 600; color: {_C_ACCENT};
 }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
+QLabel           {{ font-size: 10pt; }}
 QComboBox {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
-    border-radius: 3px; padding: 3px 8px; font-size: 11px;
+    border-radius: 4px; padding: 4px 10px; font-size: 10pt;
 }}
-QComboBox QAbstractItemView {{ background: {_C_PANEL}; color: {_C_TEXT}; selection-background-color: {_C_ACCENT}; }}
+QComboBox QAbstractItemView {{
+    background: {_C_PANEL}; color: {_C_TEXT};
+    selection-background-color: {_C_ACCENT}; font-size: 10pt;
+}}
 QListWidget {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
-    border-radius: 3px; font-size: 11px;
+    border-radius: 4px; font-size: 10pt;
 }}
-QListWidget::item:selected {{ background: {_C_ACCENT}; color: white; }}
-QListWidget::item:hover {{ background: {_C_HEADER}; }}
+QListWidget::item           {{ padding: 3px 6px; }}
+QListWidget::item:selected  {{ background: {_C_ACCENT}; color: white; }}
+QListWidget::item:hover     {{ background: {_C_HEADER}; }}
 QTextEdit {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
-    border-radius: 3px; font-size: 11px; padding: 4px;
+    border-radius: 4px; font-size: 10pt; padding: 5px;
 }}
 QPushButton {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
-    border-radius: 4px; padding: 5px 12px; font-size: 11px;
+    border-radius: 4px; padding: 6px 16px; font-size: 10pt;
 }}
-QPushButton:hover  {{ background: {_C_HEADER}; border-color: {_C_ACCENT}; }}
+QPushButton:hover   {{ background: {_C_HEADER}; border-color: {_C_ACCENT}; }}
 QPushButton:pressed {{ background: {_C_ACCENT}; color: white; }}
 QPushButton:disabled {{ color: {_C_DIM}; border-color: {_C_BORDER}; }}
-QCheckBox {{ color: {_C_TEXT}; font-size: 11px; spacing: 5px; }}
+QCheckBox           {{ color: {_C_TEXT}; font-size: 10pt; spacing: 6px; }}
 QDoubleSpinBox {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
-    border-radius: 3px; padding: 2px 6px; font-size: 11px;
+    border-radius: 4px; padding: 3px 8px; font-size: 10pt;
 }}
-QScrollArea {{ border: none; background: transparent; }}
+QScrollArea        {{ border: none; background: transparent; }}
 QScrollBar:vertical {{
     background: {_C_BG}; width: 8px; border-radius: 4px;
 }}
 QScrollBar::handle:vertical {{
-    background: {_C_BORDER}; border-radius: 4px; min-height: 20px;
+    background: {_C_BORDER}; border-radius: 4px; min-height: 24px;
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
-QStatusBar {{ background: {_C_HEADER}; color: {_C_DIM}; font-size: 10px; }}
+QStatusBar         {{ background: {_C_HEADER}; color: {_C_DIM}; font-size: 9pt; }}
 QProgressBar {{
     background: {_C_PANEL}; border: 1px solid {_C_BORDER}; border-radius: 3px;
-    text-align: center; color: {_C_TEXT}; font-size: 10px; max-height: 14px;
+    text-align: center; color: {_C_TEXT}; font-size: 9pt; max-height: 16px;
 }}
 QProgressBar::chunk {{ background: {_C_ACCENT}; border-radius: 2px; }}
-QMenuBar {{ background: {_C_HEADER}; color: {_C_TEXT}; }}
+QMenuBar            {{ background: {_C_HEADER}; color: {_C_TEXT}; font-size: 10pt; }}
 QMenuBar::item:selected {{ background: {_C_ACCENT}; }}
-QMenu {{ background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER}; }}
+QMenu               {{ background: {_C_PANEL}; color: {_C_TEXT};
+                       border: 1px solid {_C_BORDER}; font-size: 10pt; }}
 QMenu::item:selected {{ background: {_C_ACCENT}; }}
 """
 
 _SAVE_BTN_CSS = f"""
 QPushButton {{
     background: {_C_ACCENT}; color: white; border: none;
-    border-radius: 4px; padding: 7px 14px; font-size: 12px; font-weight: 600;
+    border-radius: 4px; padding: 9px 18px; font-size: 11pt; font-weight: 600;
 }}
-QPushButton:hover  {{ background: #5aabff; }}
+QPushButton:hover   {{ background: #5aabff; }}
 QPushButton:pressed {{ background: #3a8eef; }}
 QPushButton:disabled {{ background: {_C_BORDER}; color: {_C_DIM}; }}
 """
@@ -231,11 +244,13 @@ QPushButton:disabled {{ background: {_C_BORDER}; color: {_C_DIM}; }}
 _NAV_BTN_CSS = f"""
 QPushButton {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
-    border-radius: 4px; padding: 5px 16px; font-size: 11px;
+    border-radius: 4px; padding: 7px 20px; font-size: 10pt;
 }}
-QPushButton:hover  {{ background: {_C_HEADER}; border-color: {_C_ACCENT}; color: {_C_ACCENT}; }}
+QPushButton:hover   {{ background: {_C_HEADER}; border-color: {_C_ACCENT}; color: {_C_ACCENT}; }}
 QPushButton:disabled {{ color: {_C_DIM}; border-color: {_C_BORDER}; }}
 """
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -255,10 +270,12 @@ class CasePaths:
 
 @dataclass
 class QCRecord:
-    case_id:         str
-    cortex_score:    str = ""
-    subcortex_score: str = ""
-    notes:           str = ""
+    case_id:           str
+    cortex_score:      str = ""
+    subcortex_score:   str = ""
+    cort_label_ok:     str = ""   # "0"=good, "1"=bad, ""=not assessed
+    sub_label_ok:      str = ""
+    notes:             str = ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -296,13 +313,19 @@ def read_existing_results(csv_path: str) -> Dict[str, QCRecord]:
         return results
     df = pd.read_csv(csv_path)
     for _, row in df.iterrows():
+        def _safe_str(val):
+            if val != val or str(val).lower() == "nan":
+                return ""
+            return str(val)
         raw_notes = row.get("notes", "")
         notes_str = "" if (raw_notes != raw_notes or str(raw_notes).lower() == "nan") \
                     else str(raw_notes)
         rec = QCRecord(
-            case_id=str(row.get("case_id", "")),
-            cortex_score=str(row.get("cortex_score", "")),
-            subcortex_score=str(row.get("subcortex_score", "")),
+            case_id=_safe_str(row.get("case_id", "")),
+            cortex_score=_safe_str(row.get("cortex_score", "")),
+            subcortex_score=_safe_str(row.get("subcortex_score", "")),
+            cort_label_ok=_safe_str(row.get("cort_label_ok", "")),
+            sub_label_ok=_safe_str(row.get("sub_label_ok", "")),
             notes=notes_str,
         )
         if rec.case_id:
@@ -313,7 +336,8 @@ def read_existing_results(csv_path: str) -> Dict[str, QCRecord]:
 def write_results(csv_path: str, records: Dict[str, QCRecord]) -> None:
     rows = [asdict(v) for _, v in sorted(records.items(), key=lambda x: x[0])]
     pd.DataFrame(
-        rows, columns=["case_id", "cortex_score", "subcortex_score", "notes"]
+        rows, columns=["case_id", "cortex_score", "subcortex_score",
+                        "cort_label_ok", "sub_label_ok", "notes"]
     ).to_csv(csv_path, index=False)
 
 
@@ -555,10 +579,10 @@ class ContrastDialog(QDialog):
 # ImageCanvas
 # ─────────────────────────────────────────────────────────────────────────────
 
-_DIR_CSS  = (f"font-size:10px; color:{_C_DIM}; background:{_C_DIR_BAR};"
-             " padding:2px 6px; letter-spacing:1px;")
-_SYNC_CSS = (f"QCheckBox {{ color:#aabbcc; font-size:10px; }}"
-             f"QCheckBox::indicator {{ width:12px; height:12px; }}")
+_DIR_CSS  = (f"font-size:9pt; color:{_C_DIM}; background:{_C_DIR_BAR};"
+             " padding:2px 8px; letter-spacing:1px;")
+_SYNC_CSS = (f"QCheckBox {{ color:#aabbcc; font-size:9pt; }}"
+             f"QCheckBox::indicator {{ width:13px; height:13px; }}")
 
 
 class ImageCanvas(QWidget):
@@ -569,11 +593,11 @@ class ImageCanvas(QWidget):
         # title bar
         hdr = QWidget()
         hdr.setStyleSheet(f"background:{_C_HEADER};")
-        hdr.setFixedHeight(28)
+        hdr.setFixedHeight(32)
         hl = QHBoxLayout(hdr)
         hl.setContentsMargins(8, 0, 8, 0); hl.setSpacing(6)
         lbl = QLabel(title)
-        lbl.setStyleSheet(f"font-weight:600; font-size:11px; color:{_C_TEXT};")
+        lbl.setStyleSheet(f"font-weight:600; font-size:10pt; color:{_C_TEXT};")
         self.sync_cb = QCheckBox("🔗 Sync")
         self.sync_cb.setChecked(True)
         self.sync_cb.setStyleSheet(_SYNC_CSS)
@@ -584,7 +608,7 @@ class ImageCanvas(QWidget):
         # direction bar
         dir_bar = QWidget()
         dir_bar.setStyleSheet(f"background:{_C_DIR_BAR};")
-        dir_bar.setFixedHeight(18)
+        dir_bar.setFixedHeight(22)
         dl = QHBoxLayout(dir_bar)
         dl.setContentsMargins(6, 0, 6, 0); dl.setSpacing(0)
         self._lbl_left  = QLabel("← ?"); self._lbl_left.setStyleSheet(_DIR_CSS)
@@ -805,7 +829,7 @@ class ReviewerMainWindow(QMainWindow):
     def _build_statusbar(self):
         sb = self.statusBar()
         self._status_msg = QLabel("Ready")
-        self._status_msg.setStyleSheet(f"color:{_C_DIM}; font-size:10px; padding:0 8px;")
+        self._status_msg.setStyleSheet(f"color:{_C_DIM}; font-size:9pt; padding:0 8px;")
         sb.addWidget(self._status_msg, 1)
 
         self._progress_bar = QProgressBar()
@@ -815,7 +839,7 @@ class ReviewerMainWindow(QMainWindow):
         sb.addPermanentWidget(self._progress_bar)
 
     def _set_status(self, msg: str, color: str = _C_DIM):
-        self._status_msg.setStyleSheet(f"color:{color}; font-size:10px; padding:0 8px;")
+        self._status_msg.setStyleSheet(f"color:{color}; font-size:9pt; padding:0 8px;")
         self._status_msg.setText(msg)
 
     # ── layout ────────────────────────────────────────────────────────────────
@@ -856,26 +880,46 @@ class ReviewerMainWindow(QMainWindow):
 
         root.addWidget(self._main_splitter)
 
-        # Connect splitter moves → debounced fit
+        # Connect splitter moves → debounced fit + keep top/bot aligned
         for spl in (self._v_splitter, self._top_splitter, self._bot_splitter,
                     self._main_splitter):
             spl.splitterMoved.connect(lambda *_: self._fit_timer.start())
+
+        def _sync_top_to_bot(pos, idx):
+            if not self._syncing_splitters:
+                self._syncing_splitters = True
+                self._bot_splitter.moveSplitter(pos, idx)
+                self._syncing_splitters = False
+
+        def _sync_bot_to_top(pos, idx):
+            if not self._syncing_splitters:
+                self._syncing_splitters = True
+                self._top_splitter.moveSplitter(pos, idx)
+                self._syncing_splitters = False
+
+        self._syncing_splitters = False
+        self._top_splitter.splitterMoved.connect(_sync_top_to_bot)
+        self._bot_splitter.splitterMoved.connect(_sync_bot_to_top)
 
         # Deferred size setup
         QTimer.singleShot(0, self._init_splitter_sizes)
 
     def _init_splitter_sizes(self):
         w = self._main_splitter.width()
-        if w > 10:
-            self._main_splitter.setSizes([int(w * 0.62), int(w * 0.38)])
+        if w <= 10:
+            return
+        left_w = int(w * 0.70)
+        self._main_splitter.setSizes([left_w, w - left_w])
+
         h = self._v_splitter.height()
         if h > 10:
             self._v_splitter.setSizes([h // 2, h // 2])
-        # equal horizontal splits
-        for spl in (self._top_splitter, self._bot_splitter):
-            s = spl.width()
-            if s > 10:
-                spl.setSizes([s // 2, s // 2])
+
+        # Use the SAME absolute pixel value for both rows so dividers start
+        # perfectly aligned regardless of what Qt reports at this moment.
+        half = left_w // 2
+        self._top_splitter.setSizes([half, left_w - half])
+        self._bot_splitter.setSizes([half, left_w - half])
 
     # ── info panel (scrollable) ───────────────────────────────────────────────
 
@@ -901,14 +945,15 @@ class ReviewerMainWindow(QMainWindow):
         self.case_label = QLabel("-")
         self.case_label.setStyleSheet(
             f"font-family: Consolas, monospace; font-weight:700;"
-            f" font-size:14px; color:{_C_ACCENT};")
+            f" font-size:13pt; color:{_C_ACCENT};")
         self.status_label = QLabel("Status: unsaved")
+        self.status_label.setStyleSheet(f"font-size:10pt;")
         self.source_label = QLabel("Sources: -")
-        self.source_label.setStyleSheet(f"color:{_C_DIM}; font-size:10px;")
+        self.source_label.setStyleSheet(f"color:{_C_DIM}; font-size:9pt;")
         self.orient_label = QLabel("Native: -")
-        self.orient_label.setStyleSheet(f"color:{_C_DIM}; font-size:10px;")
+        self.orient_label.setStyleSheet(f"color:{_C_DIM}; font-size:9pt;")
         self.spacing_label = QLabel("Spacing: -")
-        self.spacing_label.setStyleSheet(f"color:{_C_DIM}; font-size:10px;")
+        self.spacing_label.setStyleSheet(f"color:{_C_DIM}; font-size:9pt;")
         for w in (self.case_label, self.status_label,
                   self.source_label, self.orient_label, self.spacing_label):
             vl.addWidget(w)
@@ -919,7 +964,7 @@ class ReviewerMainWindow(QMainWindow):
         ol = QVBoxLayout(ob); ol.setSpacing(6)
         self.cort_seg_cb = QCheckBox("Cortical labels (SynthSeg ROIs)")
         self.cort_seg_cb.setChecked(DEFAULT_CORT_SEG_VISIBLE)
-        self.sub_seg_cb  = QCheckBox("Subcortical labels (label file)")
+        self.sub_seg_cb  = QCheckBox("Subcortical labels")
         self.sub_seg_cb.setChecked(DEFAULT_SUB_SEG_VISIBLE)
         ol.addWidget(self.cort_seg_cb)
         ol.addWidget(self.sub_seg_cb)
@@ -936,7 +981,7 @@ class ReviewerMainWindow(QMainWindow):
             "N / P    Next / Prev case (auto-save)\n"
             "Ctrl+S   Save")
         hotkey_lbl.setStyleSheet(
-            f"font-family: Consolas, monospace; font-size:10px; color:{_C_DIM};")
+            f"font-family: Consolas, monospace; font-size:9pt; color:{_C_DIM};")
         hl.addWidget(hotkey_lbl)
         lay.addWidget(hb)
 
@@ -953,11 +998,10 @@ class ReviewerMainWindow(QMainWindow):
     def _build_qc_panel(self) -> QWidget:
         panel = QWidget()
         panel.setStyleSheet(f"QWidget {{ background: {_C_PANEL}; }}")
-        panel.setMinimumWidth(280)
-        panel.setMaximumWidth(440)
-        lay = QVBoxLayout(panel)
-        lay.setContentsMargins(12, 12, 12, 12)
-        lay.setSpacing(10)
+        panel.setMinimumWidth(260)
+        cl = QVBoxLayout(panel)
+        cl.setContentsMargins(12, 12, 12, 12)
+        cl.setSpacing(10)
 
         # Scores
         sg = QGroupBox("Motion QC Scores")
@@ -969,7 +1013,20 @@ class ReviewerMainWindow(QMainWindow):
             cb.addItems(MOTION_SCORES)
         sf.addRow("Cortex:",    self.cortex_combo)
         sf.addRow("Subcortex:", self.subcortex_combo)
-        lay.addWidget(sg)
+        cl.addWidget(sg)
+
+        # Label accuracy
+        LABEL_ACCURACY = ["0 – Good", "1 – Bad"]
+        lag = QGroupBox("Label Accuracy  (optional)")
+        laf = QFormLayout(lag); laf.setSpacing(8)
+        self.cort_label_combo = QComboBox()
+        self.sub_label_combo  = QComboBox()
+        for cb in (self.cort_label_combo, self.sub_label_combo):
+            cb.addItem("")
+            cb.addItems(LABEL_ACCURACY)
+        laf.addRow("Cortical:",    self.cort_label_combo)
+        laf.addRow("Subcortical:", self.sub_label_combo)
+        cl.addWidget(lag)
 
         # Notes
         ng = QGroupBox("Notes")
@@ -979,13 +1036,13 @@ class ReviewerMainWindow(QMainWindow):
         self.notes_edit.setMinimumHeight(80)
         self.notes_edit.setMaximumHeight(140)
         nl.addWidget(self.notes_edit)
-        lay.addWidget(ng)
+        cl.addWidget(ng)
 
         # Save
         self._btn_save = QPushButton("💾   Save   (Ctrl+S)")
         self._btn_save.setStyleSheet(_SAVE_BTN_CSS)
         self._btn_save.clicked.connect(self.save_current_case)
-        lay.addWidget(self._btn_save)
+        cl.addWidget(self._btn_save)
 
         # Navigation
         nav = QGroupBox("Navigation")
@@ -998,22 +1055,25 @@ class ReviewerMainWindow(QMainWindow):
         self.btn_next.clicked.connect(self.next_case)
         nl2.addWidget(self.btn_prev)
         nl2.addWidget(self.btn_next)
-        lay.addWidget(nav)
+        cl.addWidget(nav)
 
         # Case list
         lg = QGroupBox("Case List")
-        ll = QVBoxLayout(lg)
+        ll2 = QVBoxLayout(lg)
         self.case_list = QListWidget()
         for c in self.cases:
             self.case_list.addItem(QListWidgetItem(c.case_id))
         self.case_list.setMinimumHeight(180)
         self.case_list.itemClicked.connect(self.on_case_clicked)
-        ll.addWidget(self.case_list)
-        lay.addWidget(lg, 1)
+        ll2.addWidget(self.case_list)
+        cl.addWidget(lg, 1)
 
         self.cortex_combo.currentTextChanged.connect(self._mark_unsaved)
         self.subcortex_combo.currentTextChanged.connect(self._mark_unsaved)
+        self.cort_label_combo.currentTextChanged.connect(self._mark_unsaved)
+        self.sub_label_combo.currentTextChanged.connect(self._mark_unsaved)
         self.notes_edit.textChanged.connect(self._mark_unsaved)
+
         return panel
 
     # ── wheel filters ─────────────────────────────────────────────────────────
@@ -1134,7 +1194,7 @@ class ReviewerMainWindow(QMainWindow):
     def _mark_unsaved(self, *_):
         self.current_saved = False
         self.status_label.setText("Status:  ✏ unsaved")
-        self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:11px;")
+        self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:10pt;")
 
     def _update_seg_visibility(self, which, checked):
         if which == "cortical" and self.seg_cortical_layer:
@@ -1164,10 +1224,15 @@ class ReviewerMainWindow(QMainWindow):
     def _label_to_score(label): return label[0] if label else ""
 
     def _collect_record(self):
+        def _la(combo):
+            t = combo.currentText()
+            return t[0] if t else ""
         return QCRecord(
             case_id=self.current_case_id(),
             cortex_score=self._label_to_score(self.cortex_combo.currentText()),
             subcortex_score=self._label_to_score(self.subcortex_combo.currentText()),
+            cort_label_ok=_la(self.cort_label_combo),
+            sub_label_ok=_la(self.sub_label_combo),
             notes=self.notes_edit.toPlainText().strip())
 
     # ── save / navigation ─────────────────────────────────────────────────────
@@ -1178,7 +1243,7 @@ class ReviewerMainWindow(QMainWindow):
         write_results(self.output_csv, self.results)
         self.current_saved = True
         self.status_label.setText("Status:  ✔ saved")
-        self.status_label.setStyleSheet(f"color:{_C_SUCCESS}; font-size:11px;")
+        self.status_label.setStyleSheet(f"color:{_C_SUCCESS}; font-size:10pt;")
 
     def next_case(self):
         if self.case_index >= len(self.cases) - 1 or self._is_loading(): return
@@ -1292,22 +1357,34 @@ class ReviewerMainWindow(QMainWindow):
         # Restore QC fields
         case = self.cases[self.case_index]
         rec  = self.results.get(case.case_id, QCRecord(case_id=case.case_id))
-        for w in (self.cortex_combo, self.subcortex_combo, self.notes_edit):
+        for w in (self.cortex_combo, self.subcortex_combo,
+                  self.cort_label_combo, self.sub_label_combo, self.notes_edit):
             w.blockSignals(True)
         self.cortex_combo.setCurrentText(self._score_to_label(rec.cortex_score))
         self.subcortex_combo.setCurrentText(self._score_to_label(rec.subcortex_score))
+
+        def _restore_label_combo(combo, val):
+            for i in range(combo.count()):
+                if combo.itemText(i).startswith(val):
+                    combo.setCurrentIndex(i)
+                    return
+            combo.setCurrentIndex(0)
+
+        _restore_label_combo(self.cort_label_combo, rec.cort_label_ok)
+        _restore_label_combo(self.sub_label_combo,  rec.sub_label_ok)
         self.notes_edit.setPlainText(rec.notes)
-        for w in (self.cortex_combo, self.subcortex_combo, self.notes_edit):
+        for w in (self.cortex_combo, self.subcortex_combo,
+                  self.cort_label_combo, self.sub_label_combo, self.notes_edit):
             w.blockSignals(False)
 
         saved = case.case_id in self.results
         self.case_label.setText(case.case_id)
         if saved:
             self.status_label.setText("Status:  ✔ saved")
-            self.status_label.setStyleSheet(f"color:{_C_SUCCESS}; font-size:11px;")
+            self.status_label.setStyleSheet(f"color:{_C_SUCCESS}; font-size:10pt;")
         else:
             self.status_label.setText("Status:  ✏ unsaved")
-            self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:11px;")
+            self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:10pt;")
 
         self.source_label.setText(
             f"Cortical: {'file' if data['cort_ok'] else 'gen'}   "
@@ -1337,7 +1414,17 @@ def main():
     cases = find_cases(CASES_ROOT, FILE_NAMES)
     if not cases:
         raise RuntimeError("No valid cases found. Check CASES_ROOT and FILE_NAMES.")
+
+    # Must come BEFORE QApplication is created
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
+    QApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
+
     app = QApplication.instance() or QApplication(sys.argv)
+
+    # Base font — pt units so high-DPI screens render at the correct visual size
+    app.setFont(QFont("Segoe UI", 10))
+
+
     win = ReviewerMainWindow(cases=cases, output_csv=OUTPUT_CSV)
     win.show()
     sys.exit(app.exec_())
