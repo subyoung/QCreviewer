@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 from scipy.ndimage import binary_dilation
 
-from qtpy.QtCore import QObject, QEvent, QTimer, Qt, QThread, Signal
+from qtpy.QtCore import QObject, QEvent, QTimer, Qt
 from qtpy.QtWidgets import (
     QAction, QApplication, QCheckBox, QComboBox,
     QDialog, QDoubleSpinBox, QFormLayout, QFrame,
@@ -296,11 +296,14 @@ def read_existing_results(csv_path: str) -> Dict[str, QCRecord]:
         return results
     df = pd.read_csv(csv_path)
     for _, row in df.iterrows():
+        raw_notes = row.get("notes", "")
+        notes_str = "" if (raw_notes != raw_notes or str(raw_notes).lower() == "nan") \
+                    else str(raw_notes)
         rec = QCRecord(
             case_id=str(row.get("case_id", "")),
             cortex_score=str(row.get("cortex_score", "")),
             subcortex_score=str(row.get("subcortex_score", "")),
-            notes=str(row.get("notes", "")),
+            notes=notes_str,
         )
         if rec.case_id:
             results[rec.case_id] = rec
@@ -381,9 +384,9 @@ def load_case_data(case: CasePaths,
                    cortical_dilation_iter: int,
                    progress_cb: Callable[[int, str], None]):
     """
-    Pure data loading — runs in worker thread.
-    progress_cb(percent, message) called at each step.
-    Returns a dict consumed by _apply_loaded_data().
+    Synchronous data loading — called on the main thread.
+    progress_cb(percent, message) is called between heavy steps so the
+    caller can push QApplication.processEvents() to keep the UI live.
     """
     target_axcodes = CANONICAL_OPTIONS[canonical_key]
 
@@ -393,6 +396,9 @@ def load_case_data(case: CasePaths,
     raw_img        = reorient_image(raw_img_native, target_axcodes)
     qsm_data       = np.asarray(raw_img.get_fdata(), dtype=np.float32)
     reoriented_affine = raw_img.affine
+    # Physical voxel spacing in mm for each data axis (used as napari scale).
+    # Computed from the reoriented affine column norms — works for any orientation.
+    zooms = tuple(float(np.linalg.norm(raw_img.affine[:3, i])) for i in range(3))
 
     progress_cb(25, "Loading segmentation…")
     seg_img  = reorient_image(nib.load(case.segmentation), target_axcodes)
@@ -440,45 +446,19 @@ def load_case_data(case: CasePaths,
         np.isin(seg_data.astype(np.int32), _ALL_CORTICAL_LABELS),
         seg_data.astype(np.int32), 0)
 
-    progress_cb(98, "Ready")
+    progress_cb(98, "Ready…")
     return dict(
         raw=ensure_3d(qsm_data,      "raw_qsm"),
         cort=ensure_3d(cort_data,    "cortical_qsm"),
         sub=ensure_3d(sub_data,      "subcortical_qsm"),
-        cortical_seg=ensure_3d(cortical_seg, "cortical_seg"),
+        cortical_seg=ensure_3d(cortical_seg,  "cortical_seg"),
         subcortical_seg=ensure_3d(sub_lbl_data, "subcortical_label"),
         cort_ok=cort_ok, sub_ok=sub_ok,
         native_axcodes=native_axcodes,
         reoriented_affine=reoriented_affine,
+        zooms=zooms,
     )
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Background loader  (QThread)
-# ─────────────────────────────────────────────────────────────────────────────
-
-class LoadWorker(QThread):
-    progress = Signal(int, str)   # (percent 0-100, message)
-    finished = Signal(object)     # dict from load_case_data
-    error    = Signal(str)
-
-    def __init__(self, case, canonical_key, save_generated,
-                 subcortical_margin, cortical_dilation_iter):
-        super().__init__()
-        self._case   = case
-        self._ck     = canonical_key
-        self._save   = save_generated
-        self._sm     = subcortical_margin
-        self._cdi    = cortical_dilation_iter
-
-    def run(self):
-        try:
-            result = load_case_data(
-                self._case, self._ck, self._save, self._sm, self._cdi,
-                lambda pct, msg: self.progress.emit(pct, msg))
-            self.finished.emit(result)
-        except Exception as exc:
-            self.error.emit(str(exc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -681,16 +661,22 @@ class ImageCanvas(QWidget):
             try: self.viewer.camera.flip = (flip_v, flip_h, False)
             except Exception: pass
 
-    def fit_to_shape(self, data_shape, dims_order):
+    def fit_to_shape(self, data_shape, dims_order, zooms=None):
+        """Fit camera to ~90 % of canvas.  Uses mm dimensions when zooms supplied."""
         def _do():
             try:
                 ax_row = dims_order[-2]; ax_col = dims_order[-1]
-                row_size = data_shape[ax_row]; col_size = data_shape[ax_col]
-                self.viewer.camera.center = (row_size / 2.0, col_size / 2.0)
+                if zooms is not None:
+                    phys_row = data_shape[ax_row] * zooms[ax_row]
+                    phys_col = data_shape[ax_col] * zooms[ax_col]
+                else:
+                    phys_row = float(data_shape[ax_row])
+                    phys_col = float(data_shape[ax_col])
+                self.viewer.camera.center = (phys_row / 2.0, phys_col / 2.0)
                 nat = self._canvas_native
                 vw = max(1, nat.width())  if nat else 400
                 vh = max(1, nat.height()) if nat else 400
-                self.viewer.camera.zoom = 0.90 * min(vw / col_size, vh / row_size)
+                self.viewer.camera.zoom = 0.90 * min(vw / phys_col, vh / phys_row)
             except Exception:
                 self.viewer.reset_view()
         QTimer.singleShot(0, _do)
@@ -714,7 +700,7 @@ class ReviewerMainWindow(QMainWindow):
         self.case_index    = 0
         self.current_saved = True
         self._syncing      = False
-        self._worker: Optional[LoadWorker] = None
+        self._loading      = False   # simple re-entrancy guard
 
         # Orientation state
         cfg = ORIENTATIONS[DEFAULT_ORIENTATION]
@@ -727,6 +713,7 @@ class ReviewerMainWindow(QMainWindow):
         # Data
         self.raw_data = self.cortical_data = self.subcortical_data = None
         self._reoriented_affine = None
+        self._zooms: Optional[tuple] = None
 
         # Layers
         self.raw_layer = self.seg_cortical_layer = None
@@ -807,19 +794,11 @@ class ReviewerMainWindow(QMainWindow):
         self.orient_combo.setCurrentText(DEFAULT_ORIENTATION)
         tb.addWidget(self.orient_combo)
 
-        tb.addSeparator()
-        self.flip_h_cb = QCheckBox(" Flip H")
-        self.flip_v_cb = QCheckBox(" Flip V")
-        tb.addWidget(self.flip_h_cb)
-        tb.addWidget(self.flip_v_cb)
-
         # connections
         self.canonical_combo.currentTextChanged.connect(
             lambda _: self.load_case(self.case_index))
         self.orient_combo.currentTextChanged.connect(
             lambda _: self._apply_orientation())
-        self.flip_h_cb.toggled.connect(lambda _: self._apply_orientation())
-        self.flip_v_cb.toggled.connect(lambda _: self._apply_orientation())
 
     # ── status bar ────────────────────────────────────────────────────────────
 
@@ -928,8 +907,10 @@ class ReviewerMainWindow(QMainWindow):
         self.source_label.setStyleSheet(f"color:{_C_DIM}; font-size:10px;")
         self.orient_label = QLabel("Native: -")
         self.orient_label.setStyleSheet(f"color:{_C_DIM}; font-size:10px;")
+        self.spacing_label = QLabel("Spacing: -")
+        self.spacing_label.setStyleSheet(f"color:{_C_DIM}; font-size:10px;")
         for w in (self.case_label, self.status_label,
-                  self.source_label, self.orient_label):
+                  self.source_label, self.orient_label, self.spacing_label):
             vl.addWidget(w)
         lay.addWidget(gb)
 
@@ -1046,7 +1027,7 @@ class ReviewerMainWindow(QMainWindow):
             canvas.install_wheel_filter(make_cb(canvas))
 
     def _on_canvas_wheel(self, source: ImageCanvas, delta: int):
-        if self._worker and self._worker.isRunning():
+        if self._loading:
             return
         sa    = self._scroll_axis
         new_z = get_slice(source.viewer, sa) + delta
@@ -1101,8 +1082,7 @@ class ReviewerMainWindow(QMainWindow):
         self._canonical_key = canonical_key
 
         auto_fv, auto_fh = _AUTO_FLIP.get((canonical_key, orient_name), (False, False))
-        fv = auto_fv ^ self.flip_v_cb.isChecked()
-        fh = auto_fh ^ self.flip_h_cb.isChecked()
+        fv, fh = auto_fv, auto_fh
         self._flip_v, self._flip_h = fv, fh
 
         if canonical_key == "Native" and self._reoriented_affine is not None:
@@ -1119,7 +1099,7 @@ class ReviewerMainWindow(QMainWindow):
             canvas.set_view(self._dims_order, self._scroll_axis, data.shape, fv, fh)
             canvas.lock_scroll_mode()
             canvas.set_direction_labels(left, right, top, bottom)
-            canvas.fit_to_shape(data.shape, self._dims_order)
+            canvas.fit_to_shape(data.shape, self._dims_order, self._zooms)
 
         if force_mid and self.raw_data is not None:
             mid = self.raw_data.shape[self._scroll_axis] // 2
@@ -1130,7 +1110,7 @@ class ReviewerMainWindow(QMainWindow):
     def _fit_all(self):
         for canvas, data in self._canvas_data_pairs():
             if data is not None:
-                canvas.fit_to_shape(data.shape, self._dims_order)
+                canvas.fit_to_shape(data.shape, self._dims_order, self._zooms)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1219,7 +1199,7 @@ class ReviewerMainWindow(QMainWindow):
                 return
 
     def _is_loading(self):
-        return self._worker is not None and self._worker.isRunning()
+        return self._loading
 
     def _set_nav_enabled(self, enabled: bool):
         self.btn_prev.setEnabled(enabled and self.case_index > 0)
@@ -1229,54 +1209,52 @@ class ReviewerMainWindow(QMainWindow):
         self.canonical_combo.setEnabled(enabled)
         self.orient_combo.setEnabled(enabled)
 
-    # ── load case (async) ─────────────────────────────────────────────────────
+    # ── load case (synchronous + processEvents for UI responsiveness) ─────────
+
+    def _progress(self, pct: int, msg: str):
+        """Update progress bar and status, then let Qt repaint."""
+        self._progress_bar.setValue(pct)
+        self._set_status(msg, _C_ACCENT)
+        QApplication.processEvents()
 
     def load_case(self, index: int):
-        # Cancel any running worker
-        if self._worker and self._worker.isRunning():
-            self._worker.quit()
-            self._worker.wait(1000)
-
-        self.case_index = index
-        canonical_key   = self.canonical_combo.currentText() \
+        if self._loading:
+            return
+        self._loading    = True
+        self.case_index  = index
+        canonical_key    = self.canonical_combo.currentText() \
             if hasattr(self, "canonical_combo") else DEFAULT_CANONICAL
 
-        # Clear canvases immediately so old data disappears
+        # Clear old layers immediately
         for c in self._all_canvases():
             c.clear_layers()
 
-        # Show progress
+        # Show progress bar, disable navigation
         self._progress_bar.setValue(0)
         self._progress_bar.setVisible(True)
         self._set_status(f"Loading {self.cases[index].case_id}…", _C_ACCENT)
         self._set_nav_enabled(False)
+        QApplication.processEvents()
 
-        # Start worker
-        self._worker = LoadWorker(
-            case=self.cases[index],
-            canonical_key=canonical_key,
-            save_generated=self._act_save_gen.isChecked(),
-            subcortical_margin=SUBCORTICAL_MARGIN,
-            cortical_dilation_iter=CORTICAL_DILATION_ITER,
-        )
-        self._worker.progress.connect(self._on_load_progress)
-        self._worker.finished.connect(self._on_load_finished)
-        self._worker.error.connect(self._on_load_error)
-        self._worker.start()
+        try:
+            data = load_case_data(
+                case=self.cases[index],
+                canonical_key=canonical_key,
+                save_generated=self._act_save_gen.isChecked(),
+                subcortical_margin=SUBCORTICAL_MARGIN,
+                cortical_dilation_iter=CORTICAL_DILATION_ITER,
+                progress_cb=self._progress,
+            )
+            self._apply_loaded_data(data)
+        except Exception as exc:
+            self._progress_bar.setVisible(False)
+            self._set_status(f"Error: {exc}", _C_WARN)
+            self._set_nav_enabled(True)
+        finally:
+            self._loading = False
 
-    def _on_load_progress(self, pct: int, msg: str):
-        self._progress_bar.setValue(pct)
-        self._set_status(msg, _C_ACCENT)
-
-    def _on_load_error(self, msg: str):
-        self._progress_bar.setVisible(False)
-        self._set_status(f"Error: {msg}", _C_WARN)
-        self._set_nav_enabled(True)
-
-    def _on_load_finished(self, data: dict):
-        """Called on GUI thread when worker is done. Apply layers + orientation."""
-        self._progress_bar.setValue(100)
-
+    def _apply_loaded_data(self, data: dict):
+        """Apply loaded numpy arrays to napari layers and update UI."""
         raw  = data["raw"]
         cort = data["cort"]
         sub  = data["sub"]
@@ -1285,24 +1263,28 @@ class ReviewerMainWindow(QMainWindow):
         self.cortical_data        = cort
         self.subcortical_data     = sub
         self._reoriented_affine   = data["reoriented_affine"]
+        self._zooms               = data["zooms"]
 
         opacity = self.contrast_dlg.seg_opacity_spin.value()
+        sc = data["zooms"]   # (z0_mm, z1_mm, z2_mm) — physical spacing per data axis
+
+        self._progress(99, "Adding layers…")
 
         self.raw_layer = self.raw_canvas.add_image(
             raw, name="raw_qsm", colormap="gray",
-            contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH))
+            contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH), scale=sc)
         self.seg_cortical_layer = self.raw_canvas.add_labels(
             data["cortical_seg"], name="cortical_labels",
-            opacity=opacity, visible=self.cort_seg_cb.isChecked())
+            opacity=opacity, visible=self.cort_seg_cb.isChecked(), scale=sc)
         self.seg_subcortical_layer = self.raw_canvas.add_labels(
             data["subcortical_seg"], name="subcortical_labels",
-            opacity=opacity, visible=self.sub_seg_cb.isChecked())
+            opacity=opacity, visible=self.sub_seg_cb.isChecked(), scale=sc)
         self.cortical_layer = self.cortical_canvas.add_image(
             cort, name="cortical_qsm", colormap="gray",
-            contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH))
+            contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH), scale=sc)
         self.subcortical_layer = self.subcortical_canvas.add_image(
             sub, name="subcortical_qsm", colormap="gray",
-            contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH))
+            contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH), scale=sc)
 
         self._apply_orientation(force_mid=True)
         QTimer.singleShot(120, self._fit_all)
@@ -1328,12 +1310,15 @@ class ReviewerMainWindow(QMainWindow):
             self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:11px;")
 
         self.source_label.setText(
-            f"Cortical: {'file' if data['cort_ok'] else 'gen'}  "
-            f"  Subcortical: {'file' if data['sub_ok'] else 'gen'}")
+            f"Cortical: {'file' if data['cort_ok'] else 'gen'}   "
+            f"Subcortical: {'file' if data['sub_ok'] else 'gen'}")
         nat_str  = " → ".join(data["native_axcodes"])
         ck       = self.canonical_combo.currentText()
         reor_str = f"  (→ {ck})" if ck != "Native" else ""
         self.orient_label.setText(f"Native: {nat_str}{reor_str}")
+        z = data["zooms"]
+        self.spacing_label.setText(
+            f"Spacing: {z[0]:.3f} × {z[1]:.3f} × {z[2]:.3f} mm")
 
         self.current_saved = saved
         self.case_list.setCurrentRow(self.case_index)
@@ -1341,6 +1326,7 @@ class ReviewerMainWindow(QMainWindow):
         self._set_nav_enabled(True)
         self._progress_bar.setVisible(False)
         self._set_status(f"Loaded  {case.case_id}", _C_SUCCESS)
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1351,16 +1337,6 @@ def main():
     cases = find_cases(CASES_ROOT, FILE_NAMES)
     if not cases:
         raise RuntimeError("No valid cases found. Check CASES_ROOT and FILE_NAMES.")
-
-    # ── Must be set BEFORE QApplication is instantiated ──────────────────
-    # AA_ShareOpenGLContexts: lets multiple vispy/napari canvases share one
-    #   GL context pool instead of fighting over makeCurrent().
-    # AA_UseDesktopOpenGL:    forces native desktop GL (not ANGLE/software),
-    #   which is required for vispy on Windows with multiple canvases.
-    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
-    QApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
-    # ─────────────────────────────────────────────────────────────────────
-
     app = QApplication.instance() or QApplication(sys.argv)
     win = ReviewerMainWindow(cases=cases, output_csv=OUTPUT_CSV)
     win.show()
