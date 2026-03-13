@@ -27,7 +27,7 @@ Changes from v9:
 """
 import os
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from typing import Callable, Dict, List, Optional, Tuple
 import nibabel as nib
 import nibabel.orientations as nibo
@@ -223,6 +223,16 @@ QPushButton {{
 QPushButton:hover   {{ background: {_C_HEADER}; border-color: {_C_ACCENT}; color: {_C_ACCENT}; }}
 QPushButton:disabled {{ color: {_C_DIM}; border-color: {_C_BORDER}; }}
 """
+_QC_ERROR_STYLE = f"""
+QComboBox {{
+    background: {_C_PANEL}; color: {_C_TEXT};
+    border: 2px solid #d65c5c; border-radius: 4px; padding: 4px 10px; font-size: 10pt;
+}}
+QComboBox QAbstractItemView {{
+    background: {_C_PANEL}; color: {_C_TEXT};
+    selection-background-color: {_C_ACCENT}; font-size: 10pt;
+}}
+"""
 # ─────────────────────────────────────────────────────────────────────────────
 # Data classes
 # ─────────────────────────────────────────────────────────────────────────────
@@ -243,6 +253,7 @@ class QCRecord:
     cort_label_ok:     str = ""   # "0"=good, "1"=bad, ""=not assessed
     sub_label_ok:      str = ""
     notes:             str = ""
+    marked_for_review: str = ""   # "1"=flagged, ""=not flagged
 @dataclass
 class AppConfig:
     cases_root: str
@@ -326,7 +337,7 @@ class StartupConfigDialog(QDialog):
         title_col = QVBoxLayout()
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
-        # title_row.addWidget(logo, 0, Qt.AlignTop)
+        title_row.addWidget(logo, 0, Qt.AlignTop)
         title_row.addLayout(title_col, 1)
         lay.addLayout(title_row)
         box = QGroupBox("Paths")
@@ -440,26 +451,38 @@ def find_cases(root: str, file_names: Dict[str, str]) -> List[CasePaths]:
                 if os.path.exists(paths["subcortical_qsm"]) else None,
         ))
     return cases
+def _normalize_saved_choice(val: str) -> str:
+    s = ("" if val is None else str(val)).strip()
+    if not s:
+        return ""
+    head = s[0]
+    if head in {"0", "1", "2", "3"}:
+        return head
+    if s.lower() in {"good", "bad"}:
+        return "1" if s.lower() == "bad" else "0"
+    return s
+
 def read_existing_results(csv_path: str) -> Dict[str, QCRecord]:
     results: Dict[str, QCRecord] = {}
     if not os.path.exists(csv_path):
         return results
-    df = pd.read_csv(csv_path)
+    try:
+        df = pd.read_csv(csv_path, dtype=str, keep_default_na=False)
+    except Exception:
+        df = pd.read_csv(csv_path)
     for _, row in df.iterrows():
         def _safe_str(val):
             if val != val or str(val).lower() == "nan":
                 return ""
-            return str(val)
-        raw_notes = row.get("notes", "")
-        notes_str = "" if (raw_notes != raw_notes or str(raw_notes).lower() == "nan") \
-                    else str(raw_notes)
+            return str(val).strip()
         rec = QCRecord(
             case_id=_safe_str(row.get("case_id", "")),
-            cortex_score=_safe_str(row.get("cortex_score", "")),
-            subcortex_score=_safe_str(row.get("subcortex_score", "")),
-            cort_label_ok=_safe_str(row.get("cort_label_ok", "")),
-            sub_label_ok=_safe_str(row.get("sub_label_ok", "")),
-            notes=notes_str,
+            cortex_score=_normalize_saved_choice(_safe_str(row.get("cortex_score", ""))),
+            subcortex_score=_normalize_saved_choice(_safe_str(row.get("subcortex_score", ""))),
+            cort_label_ok=_normalize_saved_choice(_safe_str(row.get("cort_label_ok", ""))),
+            sub_label_ok=_normalize_saved_choice(_safe_str(row.get("sub_label_ok", ""))),
+            notes=_safe_str(row.get("notes", "")),
+            marked_for_review=("1" if _safe_str(row.get("marked_for_review", "")).lower() in {"1", "true", "yes", "y", "flagged", "review"} else ""),
         )
         if rec.case_id:
             results[rec.case_id] = rec
@@ -467,8 +490,7 @@ def read_existing_results(csv_path: str) -> Dict[str, QCRecord]:
 def write_results(csv_path: str, records: Dict[str, QCRecord]) -> None:
     rows = [asdict(v) for _, v in sorted(records.items(), key=lambda x: x[0])]
     pd.DataFrame(
-        rows, columns=["case_id", "cortex_score", "subcortex_score",
-                        "cort_label_ok", "sub_label_ok", "notes"]
+        rows, columns=[f.name for f in fields(QCRecord)]
     ).to_csv(csv_path, index=False)
 # ─────────────────────────────────────────────────────────────────────────────
 # Reorientation helpers
@@ -1036,6 +1058,12 @@ class ReviewerMainWindow(QMainWindow):
         self.notes_edit.setMaximumHeight(140)
         nl.addWidget(self.notes_edit)
         cl.addWidget(ng)
+        # Review flag
+        fg = QGroupBox("Review")
+        fl = QVBoxLayout(fg)
+        self.review_flag_cb = QCheckBox("Flag this case for later review")
+        fl.addWidget(self.review_flag_cb)
+        cl.addWidget(fg)
         # Save
         self._btn_save = QPushButton("💾   Save   (Ctrl+S)")
         self._btn_save.setStyleSheet(_SAVE_BTN_CSS)
@@ -1057,17 +1085,30 @@ class ReviewerMainWindow(QMainWindow):
         lg = QGroupBox("Case List")
         ll2 = QVBoxLayout(lg)
         self.case_list = QListWidget()
+        self._case_items: Dict[str, QListWidgetItem] = {}
         for c in self.cases:
-            self.case_list.addItem(QListWidgetItem(c.case_id))
+            item = QListWidgetItem(c.case_id)
+            item.setData(Qt.UserRole, c.case_id)
+            self.case_list.addItem(item)
+            self._case_items[c.case_id] = item
         self.case_list.setMinimumHeight(180)
         self.case_list.itemClicked.connect(self.on_case_clicked)
         ll2.addWidget(self.case_list)
         cl.addWidget(lg, 1)
         self.cortex_combo.currentTextChanged.connect(self._mark_unsaved)
         self.subcortex_combo.currentTextChanged.connect(self._mark_unsaved)
+        self.cortex_combo.currentTextChanged.connect(lambda _: self._clear_qc_error_if_filled(self.cortex_combo))
+        self.subcortex_combo.currentTextChanged.connect(lambda _: self._clear_qc_error_if_filled(self.subcortex_combo))
         self.cort_label_combo.currentTextChanged.connect(self._mark_unsaved)
         self.sub_label_combo.currentTextChanged.connect(self._mark_unsaved)
         self.notes_edit.textChanged.connect(self._mark_unsaved)
+        self.review_flag_cb.toggled.connect(self._mark_unsaved)
+        self.cortex_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+        self.subcortex_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+        self.cort_label_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+        self.sub_label_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+        self.notes_edit.textChanged.connect(self._refresh_current_case_list_item)
+        self.review_flag_cb.toggled.connect(lambda _: self._refresh_current_case_list_item())
         return panel
     # ── wheel filters ─────────────────────────────────────────────────────────
     def _install_wheel_filters(self):
@@ -1164,6 +1205,33 @@ class ReviewerMainWindow(QMainWindow):
     # ── misc ─────────────────────────────────────────────────────────────────
     def current_case(self): return self.cases[self.case_index]
     def current_case_id(self): return self.current_case().case_id
+    def _set_qc_field_error(self, widget: QComboBox, has_error: bool):
+        widget.setStyleSheet(_QC_ERROR_STYLE if has_error else "")
+
+    def _clear_qc_error_if_filled(self, widget: QComboBox):
+        if widget.currentText().strip():
+            self._set_qc_field_error(widget, False)
+
+    def _validate_motion_scores_before_leave(self) -> bool:
+        missing = []
+        if not self.cortex_combo.currentText().strip():
+            missing.append((self.cortex_combo, "Cortex"))
+        if not self.subcortex_combo.currentText().strip():
+            missing.append((self.subcortex_combo, "Subcortex"))
+        self._set_qc_field_error(self.cortex_combo, any(w is self.cortex_combo for w, _ in missing))
+        self._set_qc_field_error(self.subcortex_combo, any(w is self.subcortex_combo for w, _ in missing))
+        if not missing:
+            return True
+        names = " and ".join(label for _, label in missing)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("Missing Motion QC score")
+        box.setText(f"Please fill in the Motion QC score for: {names}.")
+        box.setInformativeText("The empty Motion QC field(s) have been highlighted in red. Click OK to continue to the next case anyway, or Cancel to stay on this case.")
+        box.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        box.setDefaultButton(QMessageBox.Cancel)
+        return box.exec_() == QMessageBox.Ok
+
     def _mark_unsaved(self, *_):
         self.current_saved = False
         self.status_label.setText("Status:  ✏ unsaved")
@@ -1184,10 +1252,13 @@ class ReviewerMainWindow(QMainWindow):
             if lyr is not None: lyr.contrast_limits = (lo, hi)
     @staticmethod
     def _score_to_label(score):
-        if not score: return ""
+        score = _normalize_saved_choice(score)
+        if not score:
+            return ""
         for label in MOTION_SCORES:
-            if label[0] == score: return label
-        return ""
+            if label[0] == score:
+                return label
+        return score if score in MOTION_SCORES else ""
     @staticmethod
     def _label_to_score(label): return label[0] if label else ""
     def _collect_record(self):
@@ -1200,17 +1271,59 @@ class ReviewerMainWindow(QMainWindow):
             subcortex_score=self._label_to_score(self.subcortex_combo.currentText()),
             cort_label_ok=_la(self.cort_label_combo),
             sub_label_ok=_la(self.sub_label_combo),
-            notes=self.notes_edit.toPlainText().strip())
+            notes=self.notes_edit.toPlainText().strip(),
+            marked_for_review=("1" if self.review_flag_cb.isChecked() else ""))
+    @staticmethod
+    def _record_is_completed(rec: Optional[QCRecord]) -> bool:
+        return bool(rec and rec.cortex_score and rec.subcortex_score)
+    @staticmethod
+    def _record_is_flagged(rec: Optional[QCRecord]) -> bool:
+        return bool(rec and str(rec.marked_for_review).strip() in {"1", "true", "True"})
+    def _case_item_display_text(self, case_id: str, rec: Optional[QCRecord]) -> str:
+        suffix = ""
+        if self._record_is_completed(rec):
+            suffix += " ✓"
+        if self._record_is_flagged(rec):
+            suffix += " ⚠️"
+        return f"{case_id}{suffix}"
+    def _refresh_case_list_item(self, case_id: str, rec: Optional[QCRecord] = None):
+        item = getattr(self, "_case_items", {}).get(case_id)
+        if item is None:
+            return
+        if rec is None:
+            rec = self.results.get(case_id)
+        completed = self._record_is_completed(rec)
+        flagged = self._record_is_flagged(rec)
+        item.setText(self._case_item_display_text(case_id, rec))
+        fg = QColor(_C_TEXT)
+        if flagged:
+            fg = QColor("#ffcc66")
+        elif completed:
+            fg = QColor(_C_SUCCESS)
+        item.setForeground(fg)
+        font = item.font()
+        font.setBold(completed or flagged)
+        item.setFont(font)
+    def _refresh_all_case_list_items(self):
+        for c in self.cases:
+            self._refresh_case_list_item(c.case_id)
+    def _refresh_current_case_list_item(self):
+        if not getattr(self, "cases", None):
+            return
+        self._refresh_case_list_item(self.current_case_id(), self._collect_record())
     # ── save / navigation ─────────────────────────────────────────────────────
     def save_current_case(self):
         rec = self._collect_record()
         self.results[rec.case_id] = rec
         write_results(self.output_csv, self.results)
+        self._refresh_case_list_item(rec.case_id, rec)
         self.current_saved = True
         self.status_label.setText("Status:  ✔ saved")
         self.status_label.setStyleSheet(f"color:{_C_SUCCESS}; font-size:10pt;")
     def next_case(self):
         if self.case_index >= len(self.cases) - 1 or self._is_loading(): return
+        if not self._validate_motion_scores_before_leave():
+            return
         self.save_current_case()
         self.load_case(self.case_index + 1)
     def prev_case(self):
@@ -1220,7 +1333,12 @@ class ReviewerMainWindow(QMainWindow):
     def on_case_clicked(self, item):
         if self._is_loading(): return
         for i, c in enumerate(self.cases):
-            if c.case_id == item.text() and i != self.case_index:
+            if c.case_id == item.data(Qt.UserRole) and i != self.case_index:
+                if not self._validate_motion_scores_before_leave():
+                    self.case_list.blockSignals(True)
+                    self.case_list.setCurrentRow(self.case_index)
+                    self.case_list.blockSignals(False)
+                    return
                 self.save_current_case()
                 self.load_case(i)
                 return
@@ -1306,10 +1424,12 @@ class ReviewerMainWindow(QMainWindow):
         case = self.cases[self.case_index]
         rec  = self.results.get(case.case_id, QCRecord(case_id=case.case_id))
         for w in (self.cortex_combo, self.subcortex_combo,
-                  self.cort_label_combo, self.sub_label_combo, self.notes_edit):
+                  self.cort_label_combo, self.sub_label_combo, self.notes_edit, self.review_flag_cb):
             w.blockSignals(True)
         self.cortex_combo.setCurrentText(self._score_to_label(rec.cortex_score))
         self.subcortex_combo.setCurrentText(self._score_to_label(rec.subcortex_score))
+        self._set_qc_field_error(self.cortex_combo, False)
+        self._set_qc_field_error(self.subcortex_combo, False)
         def _restore_label_combo(combo, val):
             for i in range(combo.count()):
                 if combo.itemText(i).startswith(val):
@@ -1319,8 +1439,9 @@ class ReviewerMainWindow(QMainWindow):
         _restore_label_combo(self.cort_label_combo, rec.cort_label_ok)
         _restore_label_combo(self.sub_label_combo,  rec.sub_label_ok)
         self.notes_edit.setPlainText(rec.notes)
+        self.review_flag_cb.setChecked(bool(rec.marked_for_review))
         for w in (self.cortex_combo, self.subcortex_combo,
-                  self.cort_label_combo, self.sub_label_combo, self.notes_edit):
+                  self.cort_label_combo, self.sub_label_combo, self.notes_edit, self.review_flag_cb):
             w.blockSignals(False)
         saved = case.case_id in self.results
         self.case_label.setText(case.case_id)
@@ -1341,6 +1462,8 @@ class ReviewerMainWindow(QMainWindow):
         self.spacing_label.setText(
             f"Spacing: {z[0]:.3f} × {z[1]:.3f} × {z[2]:.3f} mm")
         self.current_saved = saved
+        self._refresh_all_case_list_items()
+        self._refresh_case_list_item(case.case_id, rec)
         self.case_list.setCurrentRow(self.case_index)
         self.contrast_dlg.reset()
         self._set_nav_enabled(True)
