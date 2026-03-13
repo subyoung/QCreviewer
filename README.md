@@ -41,17 +41,10 @@ The app also supports automatic generation and optional saving of derived QSM im
 ## Screenshots
 
 ### Main reviewer interface
-<!-- Replace with screenshot -->
 ![Main Interface](docs/images/main-interface.png)
 
 ### Path setup window
-<!-- Replace with screenshot -->
 ![Path Setup](docs/images/path-setup.png)
-
-### Case list and QC panel
-<!-- Replace with screenshot -->
-![QC Panel](docs/images/qc-panel.png)
-
 ---
 
 ## Key Features
@@ -304,7 +297,6 @@ QCreviewer/
 ├─ QCreviewer.py
 ├─ README.md
 ├─ app.ico
-├─ logo.png
 └─ other project files
 ```
 
