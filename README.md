@@ -300,24 +300,18 @@ QCreviewer/
 ├─ QCreviewer.py
 ├─ README.md
 ├─ app.ico
-└─ other project files
+├─ QCreviewer.spec
+├─ build_qsm_qc_reviewer.bat
+├─ docs
+├─ LICENSE
 ```
 
 ---
 
 ## License
 
-Add your license information here.
-
-For example:
-
-```text
-MIT License 
-```
-
-Or replace this section with the license used by your project.
-
----
+This project is licensed under the Apache License 2.0.  
+See the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
