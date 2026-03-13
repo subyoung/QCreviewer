@@ -1,40 +1,27 @@
 """
-QSM QC Reviewer v10.1
+QSM QC Reviewer v11
 =====================
-Changes from v9:
-1. SPLITTABLE LEFT PANEL
-   The three viewer canvases are arranged in a vertical QSplitter (default 50/50):
-     Top  row : QSplitter(H) → Raw QSM | Cortical QSM
-     Bottom row: QSplitter(H) → Subcortical QSM | Info panel (scrollable)
-   Dragging any divider triggers a debounced fit_all.  The per-row H-splitters
-   start at 50/50.
-2. SCROLLABLE INFO PANEL
-   The bottom-right info panel is wrapped in a QScrollArea so it never gets
-   clipped when the window is small.
-3. ORIENTATION IN TOOLBAR
-   All orientation controls (Canonical, View, Flip H, Flip V) have been moved
-   from the info panel into a compact QToolBar that sits just below the menu bar.
-   Default: LPI (ITK-SNAP) + Axial — correct ITK-SNAP convention on first launch.
-4. UI POLISH
-   Consistent dark theme with accent colours, rounded group-box titles,
-   better spacing, monospace case labels, colour-coded status text.
-5. ASYNC LOADING WITH PROGRESS BAR
-   File I/O and reorientation happen in a QThread (LoadWorker).
-   A QProgressBar embedded in the status bar shows live steps.
-   Navigation / case-list are disabled during loading and re-enabled when
-   the worker finishes.  The main thread only handles napari layer calls
-   (which must stay on the GUI thread).
+1. Added background case loading with QThread to keep the UI responsive during NIfTI reading, mask generation, and derived QSM creation.
+2. Added a recent-case in-memory cache so switching back to recently opened cases is much faster.
+3. Optimized mouse wheel slice navigation with lightweight event batching/throttling for smoother scrolling.
+4. Kept Ctrl + mouse wheel zoom behavior while separating it cleanly from normal slice scrolling.
+5. Reduced unnecessary Napari layer destruction/recreation by reusing layers and updating data/visibility when possible.
+6. Reduced redundant fit/camera updates to improve responsiveness during case loading, splitter resizing, and view changes.
+7. Improved performance of cortical mode switching by avoiding full view rebuilds where possible.
+8. Preserved all current reviewer features, including expanded cortical QSM, segmentation overlays, case flags, zoom presets/custom zoom, and startup settings.
+9. Fixed a potential ROI variable inconsistency in the expanded cortical QSM generation path.
 """
 import os
 import sys
 from dataclasses import dataclass, asdict, fields
 from typing import Callable, Dict, List, Optional, Tuple
+from collections import OrderedDict
 import nibabel as nib
 import nibabel.orientations as nibo
 import numpy as np
 import pandas as pd
 from scipy.ndimage import binary_dilation
-from qtpy.QtCore import QObject, QEvent, QTimer, Qt, QSize
+from qtpy.QtCore import QObject, QEvent, QTimer, Qt, QSize, Signal, QThread
 from qtpy.QtGui import QFont, QColor, QPainter, QPainterPath, QPen, QPixmap, QIcon
 from qtpy.QtWidgets import (
     QAction, QApplication, QCheckBox, QComboBox,
@@ -577,96 +564,140 @@ def load_case_data(case: CasePaths,
                    display_mode: str,
                    progress_cb: Callable[[int, str], None],
                    file_names: Dict[str, str]):
-    """
-    Synchronous data loading — called on the main thread.
-    progress_cb(percent, message) is called between heavy steps so the
-    caller can push QApplication.processEvents() to keep the UI live.
-    """
+    """Heavy data loading / generation, safe to run in a worker thread."""
     target_axcodes = CANONICAL_OPTIONS[canonical_key]
     progress_cb(5, "Loading raw QSM…")
     raw_img_native = nib.load(case.raw_qsm)
     native_axcodes = nibo.aff2axcodes(raw_img_native.affine)
-    raw_img        = reorient_image(raw_img_native, target_axcodes)
-    qsm_data       = np.asarray(raw_img.get_fdata(), dtype=np.float32)
+    raw_img = reorient_image(raw_img_native, target_axcodes)
+    qsm_data = np.asarray(raw_img.get_fdata(dtype=np.float32), dtype=np.float32)
     reoriented_affine = raw_img.affine
-    # Physical voxel spacing in mm for each data axis (used as napari scale).
-    # Computed from the reoriented affine column norms — works for any orientation.
     zooms = tuple(float(np.linalg.norm(raw_img.affine[:3, i])) for i in range(3))
-    progress_cb(25, "Loading segmentation…")
-    seg_img  = reorient_image(nib.load(case.segmentation), target_axcodes)
-    seg_data = np.asarray(seg_img.get_fdata(), dtype=np.float32)
-    progress_cb(40, "Loading subcortical labels…")
-    sub_lbl_img  = reorient_image(nib.load(case.subcortical_label), target_axcodes)
-    sub_lbl_data = np.asarray(sub_lbl_img.get_fdata()).astype(np.int32)
-    cort_roi_ok = case.cortical_qsm is not None and os.path.exists(case.cortical_qsm)
-    cort_cube_ok = case.cortical_qsm_cube is not None and os.path.exists(case.cortical_qsm_cube)
-    sub_ok  = case.subcortical_qsm is not None and os.path.exists(case.subcortical_qsm)
-    progress_cb(55, "Loading subcortical QSM…")
+
+    progress_cb(22, "Loading segmentation…")
+    seg_img = reorient_image(nib.load(case.segmentation), target_axcodes)
+    seg_data = np.asarray(seg_img.get_fdata(), dtype=np.int32)
+
+    progress_cb(36, "Loading subcortical labels…")
+    sub_lbl_img = reorient_image(nib.load(case.subcortical_label), target_axcodes)
+    sub_lbl_data = np.asarray(sub_lbl_img.get_fdata(), dtype=np.int32)
+
+    cort_roi_ok = bool(case.cortical_qsm and os.path.exists(case.cortical_qsm))
+    cort_cube_ok = bool(case.cortical_qsm_cube and os.path.exists(case.cortical_qsm_cube))
+    sub_ok = bool(case.subcortical_qsm and os.path.exists(case.subcortical_qsm))
+    generated_paths = {}
+
+    progress_cb(50, "Loading subcortical QSM…")
     cube_mask = None
     if sub_ok:
         sub_data = np.asarray(
-            reorient_image(nib.load(case.subcortical_qsm), target_axcodes).get_fdata(),
-            dtype=np.float32)
+            reorient_image(nib.load(case.subcortical_qsm), target_axcodes).get_fdata(dtype=np.float32),
+            dtype=np.float32,
+        )
         cube_mask = (sub_data != 0).astype(np.uint8)
     else:
-        progress_cb(62, "Generating subcortical mask…")
-        sub_data, cube_mask = generate_subcortical_qsm(
-            qsm_data, sub_lbl_data, subcortical_margin
-        )
-        sub_data = sub_data.astype(np.float32)
+        progress_cb(60, "Generating subcortical mask…")
+        sub_data, cube_mask = generate_subcortical_qsm(qsm_data, sub_lbl_data, subcortical_margin)
+        sub_data = sub_data.astype(np.float32, copy=False)
         if save_generated:
             p = os.path.join(case.case_dir, file_names["subcortical_qsm"])
             nib.save(nib.Nifti1Image(sub_data, raw_img.affine, raw_img.header), p)
-            case.subcortical_qsm = p; sub_ok = True
-    progress_cb(72, "Loading cortical QSMs…")
+            generated_paths["subcortical_qsm"] = p
+            sub_ok = True
+
+    progress_cb(70, "Loading cortical QSMs…")
     if cort_roi_ok:
         cort_roi_data = np.asarray(
-            reorient_image(nib.load(case.cortical_qsm), target_axcodes).get_fdata(),
-            dtype=np.float32)
+            reorient_image(nib.load(case.cortical_qsm), target_axcodes).get_fdata(dtype=np.float32),
+            dtype=np.float32,
+        )
     else:
         progress_cb(76, "Generating cortical ROI QSM…")
         cort_roi_data = generate_cortical_qsm(
             qsm_data, seg_data, ROI_LABEL_SYNTHSEG_COMBINED, cortical_dilation_iter
-        ).astype(np.float32)
+        ).astype(np.float32, copy=False)
+
     if cort_cube_ok:
         cort_cube_data = np.asarray(
-            reorient_image(nib.load(case.cortical_qsm_cube), target_axcodes).get_fdata(),
-            dtype=np.float32)
+            reorient_image(nib.load(case.cortical_qsm_cube), target_axcodes).get_fdata(dtype=np.float32),
+            dtype=np.float32,
+        )
     else:
-        progress_cb(82, "Generating cortical cube QSM…")
+        progress_cb(84, "Generating cortical expanded QSM…")
         if cube_mask is None:
             _, cube_mask = generate_subcortical_qsm(qsm_data, sub_lbl_data, subcortical_margin)
-        cort_cube_data = generate_cortical_qsm_cube(qsm_data, seg_data, ROI_LABEL_SYNTHSEG_COMBINED, cube_mask, cortical_dilation_iter).astype(np.float32)
+        cort_cube_data = generate_cortical_qsm_cube(
+            qsm_data, seg_data, ROI_LABEL_SYNTHSEG_COMBINED, cube_mask, cortical_dilation_iter
+        ).astype(np.float32, copy=False)
+
     if save_generated:
         if not cort_roi_ok:
             p = os.path.join(case.case_dir, file_names["cortical_qsm"])
             nib.save(nib.Nifti1Image(cort_roi_data, raw_img.affine, raw_img.header), p)
-            case.cortical_qsm = p; cort_roi_ok = True
+            generated_paths["cortical_qsm"] = p
+            cort_roi_ok = True
         if not cort_cube_ok:
             p = os.path.join(case.case_dir, file_names["cortical_qsm_cube"])
             nib.save(nib.Nifti1Image(cort_cube_data, raw_img.affine, raw_img.header), p)
-            case.cortical_qsm_cube = p; cort_cube_ok = True
+            generated_paths["cortical_qsm_cube"] = p
+            cort_cube_ok = True
+
     cort_data = cort_roi_data if display_mode == "ROI only" else cort_cube_data
     progress_cb(92, "Building seg overlays…")
-    cortical_seg = np.where(
-        np.isin(seg_data.astype(np.int32), _ALL_CORTICAL_LABELS),
-        seg_data.astype(np.int32), 0)
+    cortical_seg = np.where(np.isin(seg_data, _ALL_CORTICAL_LABELS), seg_data, 0).astype(np.int32, copy=False)
     progress_cb(98, "Ready…")
     return dict(
-        raw=ensure_3d(qsm_data,      "raw_qsm"),
-        cort=ensure_3d(cort_data,    "cortical_qsm"),
+        raw=ensure_3d(qsm_data, "raw_qsm"),
+        cort=ensure_3d(cort_data, "cortical_qsm"),
         cort_roi=ensure_3d(cort_roi_data, "cortical_qsm_roi"),
         cort_cube=ensure_3d(cort_cube_data, "cortical_qsm_cube"),
-        sub=ensure_3d(sub_data,      "subcortical_qsm"),
-        cortical_seg=ensure_3d(cortical_seg,  "cortical_seg"),
-        subcortical_seg=ensure_3d(sub_lbl_data, "subcortical_label"),
-        cube_mask=ensure_3d(cube_mask.astype(np.uint8), "cube_mask"),
+        sub=ensure_3d(sub_data, "subcortical_qsm"),
+        cortical_seg=ensure_3d(cortical_seg, "cortical_seg"),
+        subcortical_seg=ensure_3d(sub_lbl_data.astype(np.int32, copy=False), "subcortical_label"),
+        cube_mask=ensure_3d(cube_mask.astype(np.uint8, copy=False), "cube_mask"),
         cort_ok=(cort_roi_ok if display_mode == "ROI only" else cort_cube_ok),
-        cort_roi_ok=cort_roi_ok, cort_cube_ok=cort_cube_ok, sub_ok=sub_ok,
+        cort_roi_ok=cort_roi_ok,
+        cort_cube_ok=cort_cube_ok,
+        sub_ok=sub_ok,
         native_axcodes=native_axcodes,
         reoriented_affine=reoriented_affine,
         zooms=zooms,
+        generated_paths=generated_paths,
     )
+
+
+class LoadWorker(QObject):
+    progressed = Signal(int, str)
+    finished = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, *, case: CasePaths, canonical_key: str, save_generated: bool,
+                 subcortical_margin: int, cortical_dilation_iter: int,
+                 display_mode: str, file_names: Dict[str, str]):
+        super().__init__()
+        self.case = case
+        self.canonical_key = canonical_key
+        self.save_generated = save_generated
+        self.subcortical_margin = subcortical_margin
+        self.cortical_dilation_iter = cortical_dilation_iter
+        self.display_mode = display_mode
+        self.file_names = dict(file_names)
+
+    def run(self):
+        try:
+            data = load_case_data(
+                case=self.case,
+                canonical_key=self.canonical_key,
+                save_generated=self.save_generated,
+                subcortical_margin=self.subcortical_margin,
+                cortical_dilation_iter=self.cortical_dilation_iter,
+                display_mode=self.display_mode,
+                progress_cb=lambda pct, msg: self.progressed.emit(int(pct), str(msg)),
+                file_names=self.file_names,
+            )
+            self.finished.emit(data)
+        except Exception as exc:
+            self.failed.emit(str(exc))
 # ─────────────────────────────────────────────────────────────────────────────
 # Dims helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -805,6 +836,7 @@ class ImageCanvas(QWidget):
         self.qt_viewer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._canvas_native: Optional[QWidget] = self._find_native()
         self._wheel_filter: Optional[WheelScrollFilter] = None
+        self._last_fit_signature = None
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
@@ -935,29 +967,28 @@ class ImageCanvas(QWidget):
         except Exception:
             try: self.viewer.camera.flip = (flip_v, flip_h, False)
             except Exception: pass
-    def fit_to_shape(self, data_shape, dims_order, zooms=None):
+    def fit_to_shape(self, data_shape, dims_order, zooms=None, force: bool = False):
         """Fit camera to ~90 % of canvas, then apply current zoom mode."""
-        def _do():
-            try:
-                ax_row = dims_order[-2]; ax_col = dims_order[-1]
-                if zooms is not None:
-                    phys_row = data_shape[ax_row] * zooms[ax_row]
-                    phys_col = data_shape[ax_col] * zooms[ax_col]
-                else:
-                    phys_row = float(data_shape[ax_row])
-                    phys_col = float(data_shape[ax_col])
-                self.viewer.camera.center = (phys_row / 2.0, phys_col / 2.0)
-                nat = self._canvas_native
-                vw = max(1, nat.width())  if nat else 400
-                vh = max(1, nat.height()) if nat else 400
-                fit_zoom = 0.90 * min(vw / phys_col, vh / phys_row)
-                if self._zoom_mode == "fit":
-                    self.viewer.camera.zoom = fit_zoom
-                else:
-                    self.viewer.camera.zoom = fit_zoom * float(self._zoom_mode)
-            except Exception:
-                self.viewer.reset_view()
-        QTimer.singleShot(0, _do)
+        try:
+            nat = self._canvas_native
+            vw = max(1, nat.width()) if nat else 400
+            vh = max(1, nat.height()) if nat else 400
+            signature = (tuple(data_shape), tuple(dims_order), tuple(zooms) if zooms is not None else None, vw, vh, self._zoom_mode)
+            if (not force) and signature == self._last_fit_signature:
+                return
+            self._last_fit_signature = signature
+            ax_row = dims_order[-2]; ax_col = dims_order[-1]
+            if zooms is not None:
+                phys_row = data_shape[ax_row] * zooms[ax_row]
+                phys_col = data_shape[ax_col] * zooms[ax_col]
+            else:
+                phys_row = float(data_shape[ax_row])
+                phys_col = float(data_shape[ax_col])
+            self.viewer.camera.center = (phys_row / 2.0, phys_col / 2.0)
+            fit_zoom = 0.90 * min(vw / max(1e-6, phys_col), vh / max(1e-6, phys_row))
+            self.viewer.camera.zoom = fit_zoom if self._zoom_mode == "fit" else fit_zoom * float(self._zoom_mode)
+        except Exception:
+            self.viewer.reset_view()
 # ─────────────────────────────────────────────────────────────────────────────
 # Main window
 # ─────────────────────────────────────────────────────────────────────────────
@@ -981,7 +1012,17 @@ class ReviewerMainWindow(QMainWindow):
         self.case_index    = 0
         self.current_saved = True
         self._syncing      = False
-        self._loading      = False   # simple re-entrancy guard
+        self._loading      = False
+        self._load_thread: Optional[QThread] = None
+        self._load_worker: Optional[LoadWorker] = None
+        self._pending_load_index: Optional[int] = None
+        self._data_cache: OrderedDict = OrderedDict()
+        self._cache_limit = 3
+        self._wheel_pending_steps: Dict[int, Tuple[ImageCanvas, int]] = {}
+        self._wheel_timer = QTimer(self)
+        self._wheel_timer.setSingleShot(True)
+        self._wheel_timer.setInterval(12)
+        self._wheel_timer.timeout.connect(self._flush_wheel_scroll)
         # Orientation state
         cfg = ORIENTATIONS[DEFAULT_ORIENTATION]
         self._scroll_axis: int  = cfg["axis"]
@@ -1018,7 +1059,7 @@ class ReviewerMainWindow(QMainWindow):
         # Fit-all debounce timer (splitter drag)
         self._fit_timer = QTimer(self)
         self._fit_timer.setSingleShot(True)
-        self._fit_timer.setInterval(80)
+        self._fit_timer.setInterval(120)
         self._fit_timer.timeout.connect(self._fit_all)
         self._build_menu()
         self._build_toolbar()
@@ -1035,6 +1076,62 @@ class ReviewerMainWindow(QMainWindow):
         return [(self.raw_canvas, self.raw_data),
                 (self.cortical_canvas, self.cortical_data),
                 (self.subcortical_canvas, self.subcortical_data)]
+
+    def _cache_key_for(self, case: CasePaths, canonical_key: str):
+        return (
+            case.case_id,
+            canonical_key,
+            int(SUBCORTICAL_MARGIN),
+            int(CORTICAL_DILATION_ITER),
+            tuple(sorted(self.file_names.items())),
+            bool(self._act_save_gen.isChecked()) if hasattr(self, '_act_save_gen') else False,
+        )
+
+    def _remember_cache(self, key, data: dict):
+        self._data_cache[key] = data
+        self._data_cache.move_to_end(key)
+        while len(self._data_cache) > self._cache_limit:
+            self._data_cache.popitem(last=False)
+
+    def _cleanup_load_thread(self):
+        thread = self._load_thread
+        worker = self._load_worker
+        self._load_worker = None
+        self._load_thread = None
+        if thread is not None:
+            thread.quit()
+            thread.wait(1000)
+            thread.deleteLater()
+        if worker is not None:
+            worker.deleteLater()
+
+    def _update_image_layer(self, layer_attr: str, canvas: ImageCanvas, data, *, name: str, scale, contrast_limits=None):
+        layer = getattr(self, layer_attr, None)
+        if layer is None:
+            layer = canvas.add_image(data, name=name, colormap='gray', contrast_limits=contrast_limits or (DEFAULT_LOW, DEFAULT_HIGH), scale=scale)
+            setattr(self, layer_attr, layer)
+        else:
+            layer.data = data
+            layer.scale = scale
+            if contrast_limits is not None:
+                layer.contrast_limits = contrast_limits
+            try:
+                layer.visible = True
+            except Exception:
+                pass
+        return layer
+
+    def _update_label_layer(self, layer_attr: str, canvas: ImageCanvas, data, *, name: str, scale, opacity: float, visible: bool):
+        layer = getattr(self, layer_attr, None)
+        if layer is None:
+            layer = canvas.add_labels(data, name=name, opacity=opacity, visible=visible, scale=scale)
+            setattr(self, layer_attr, layer)
+        else:
+            layer.data = data
+            layer.scale = scale
+            layer.opacity = opacity
+            layer.visible = visible
+        return layer
     # ── menu ─────────────────────────────────────────────────────────────────
     def _build_menu(self):
         vm = self.menuBar().addMenu("View")
@@ -1315,7 +1412,30 @@ class ReviewerMainWindow(QMainWindow):
         elif source is self.subcortical_canvas:
             data = self.subcortical_data
         if data is not None:
-            source.fit_to_shape(data.shape, self._dims_order, self._zooms)
+            source.fit_to_shape(data.shape, self._dims_order, self._zooms, force=True)
+
+    def _flush_wheel_scroll(self):
+        pending = list(self._wheel_pending_steps.values())
+        self._wheel_pending_steps.clear()
+        if not pending or self._loading:
+            return
+        self._syncing = True
+        try:
+            for source, steps in pending:
+                if steps == 0:
+                    continue
+                sa = self._scroll_axis
+                if source.sync_enabled:
+                    active = [c for c in self._all_canvases() if c.sync_enabled] or [source]
+                    new_z = get_slice(source.viewer, sa) + steps
+                    for c in active:
+                        set_slice(c.viewer, new_z, sa)
+                else:
+                    new_z = get_slice(source.viewer, sa) + steps
+                    set_slice(source.viewer, new_z, sa)
+        finally:
+            self._syncing = False
+
     def _on_canvas_wheel(self, source: ImageCanvas, event):
         if self._loading:
             return
@@ -1326,18 +1446,13 @@ class ReviewerMainWindow(QMainWindow):
         if bool(event.modifiers() & Qt.ControlModifier):
             source.step_zoom_by(delta, apply=True)
             return
-        sa    = self._scroll_axis
-        new_z = get_slice(source.viewer, sa) + delta
-        if not source.sync_enabled:
-            set_slice(source.viewer, new_z, sa)
-            return
-        self._syncing = True
-        try:
-            for c in self._all_canvases():
-                if c.sync_enabled:
-                    set_slice(c.viewer, new_z, sa)
-        finally:
-            self._syncing = False
+        key = id(source)
+        if key in self._wheel_pending_steps:
+            _, prev = self._wheel_pending_steps[key]
+            self._wheel_pending_steps[key] = (source, prev + delta)
+        else:
+            self._wheel_pending_steps[key] = (source, delta)
+        self._wheel_timer.start()
     # ── slice sync ────────────────────────────────────────────────────────────
     def _connect_slice_sync(self):
         def make_handler(src: ImageCanvas):
@@ -1378,27 +1493,12 @@ class ReviewerMainWindow(QMainWindow):
         if data is None:
             return
         self.cortical_data = data
-        sc = self._zooms
         current_z = get_slice(self.cortical_canvas.viewer, self._scroll_axis)
-        current_limits = (DEFAULT_LOW, DEFAULT_HIGH)
-        if self.cortical_layer is not None:
-            try:
-                current_limits = tuple(self.cortical_layer.contrast_limits)
-            except Exception:
-                pass
-        opacity = self.contrast_dlg.seg_opacity_spin.value()
-        seg_data = getattr(self, "_loaded_cortical_seg", None)
-        self.cortical_canvas.clear_layers()
-        self.cortical_layer = self.cortical_canvas.add_image(
-            data, name="cortical_qsm", colormap="gray",
-            contrast_limits=current_limits, scale=sc)
-        self.cortical_seg_layer = None
+        current_limits = tuple(self.cortical_layer.contrast_limits) if self.cortical_layer is not None else (DEFAULT_LOW, DEFAULT_HIGH)
+        self._update_image_layer('cortical_layer', self.cortical_canvas, data, name='cortical_qsm', scale=self._zooms, contrast_limits=current_limits)
+        seg_data = getattr(self, '_loaded_cortical_seg', None)
         if seg_data is not None:
-            self.cortical_seg_layer = self.cortical_canvas.add_labels(
-                seg_data, name="cortical_labels",
-                opacity=opacity,
-                visible=self.cort_seg_cb.isChecked() and self._show_seg_in_derived_views,
-                scale=sc)
+            self._update_label_layer('cortical_seg_layer', self.cortical_canvas, seg_data, name='cortical_labels', scale=self._zooms, opacity=self.contrast_dlg.seg_opacity_spin.value(), visible=self.cort_seg_cb.isChecked() and self._show_seg_in_derived_views)
         self._apply_orientation(force_mid=False)
         set_slice(self.cortical_canvas.viewer, current_z, self._scroll_axis)
         self._refresh_source_label()
@@ -1432,10 +1532,12 @@ class ReviewerMainWindow(QMainWindow):
             mid = self.raw_data.shape[self._scroll_axis] // 2
             self._set_all_slices_force(mid)
     # ── fit / resize ──────────────────────────────────────────────────────────
-    def _fit_all(self):
+    def _fit_all(self, force: bool = False):
+        if self._loading and not force:
+            return
         for canvas, data in self._canvas_data_pairs():
             if data is not None:
-                canvas.fit_to_shape(data.shape, self._dims_order, self._zooms)
+                canvas.fit_to_shape(data.shape, self._dims_order, self._zooms, force=force)
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._fit_timer.start()
@@ -1609,92 +1711,113 @@ class ReviewerMainWindow(QMainWindow):
         self.case_list.setEnabled(enabled)
         self.canonical_combo.setEnabled(enabled)
         self.orient_combo.setEnabled(enabled)
-    # ── load case (synchronous + processEvents for UI responsiveness) ─────────
+    # ── load case (background worker + cache) ─────────────────────────────────
     def _progress(self, pct: int, msg: str):
-        """Update progress bar and status, then let Qt repaint."""
-        self._progress_bar.setValue(pct)
+        self._progress_bar.setValue(int(pct))
         self._set_status(msg, _C_ACCENT)
-        QApplication.processEvents()
+
     def load_case(self, index: int):
-        if self._loading:
+        if index < 0 or index >= len(self.cases):
             return
-        self._loading    = True
-        self.case_index  = index
-        canonical_key    = self.canonical_combo.currentText() \
-            if hasattr(self, "canonical_combo") else DEFAULT_CANONICAL
-        # Clear old layers immediately
-        for c in self._all_canvases():
-            c.clear_layers()
-        self.cortical_seg_layer = None
-        self.subcortical_seg_layer = None
-        # Show progress bar, disable navigation
+        if self._loading:
+            self._pending_load_index = index
+            return
+        self._loading = True
+        self.case_index = index
+        case = self.cases[index]
+        canonical_key = self.canonical_combo.currentText() if hasattr(self, 'canonical_combo') else DEFAULT_CANONICAL
+        cache_key = self._cache_key_for(case, canonical_key)
         self._progress_bar.setValue(0)
         self._progress_bar.setVisible(True)
-        self._set_status(f"Loading {self.cases[index].case_id}…", _C_ACCENT)
+        self._set_status(f"Loading {case.case_id}…", _C_ACCENT)
         self._set_nav_enabled(False)
-        QApplication.processEvents()
-        try:
-            data = load_case_data(
-                case=self.cases[index],
-                canonical_key=canonical_key,
-                save_generated=self._act_save_gen.isChecked(),
-                subcortical_margin=SUBCORTICAL_MARGIN,
-                cortical_dilation_iter=CORTICAL_DILATION_ITER,
-                display_mode=self.cortical_mode_combo.currentText(),
-                progress_cb=self._progress,
-                file_names=self.file_names,
-            )
+        if cache_key in self._data_cache:
+            data = self._data_cache[cache_key]
+            self._data_cache.move_to_end(cache_key)
+            self._progress(100, "Loaded from cache")
             self._apply_loaded_data(data)
-        except Exception as exc:
-            self._progress_bar.setVisible(False)
-            self._set_status(f"Error: {exc}", _C_WARN)
-            self._set_nav_enabled(True)
-        finally:
             self._loading = False
+            self._set_nav_enabled(True)
+            self._progress_bar.setVisible(False)
+            if self._pending_load_index is not None and self._pending_load_index != self.case_index:
+                nxt = self._pending_load_index
+                self._pending_load_index = None
+                self.load_case(nxt)
+            return
+
+        self._cleanup_load_thread()
+        self._load_thread = QThread(self)
+        self._load_worker = LoadWorker(
+            case=case,
+            canonical_key=canonical_key,
+            save_generated=self._act_save_gen.isChecked(),
+            subcortical_margin=SUBCORTICAL_MARGIN,
+            cortical_dilation_iter=CORTICAL_DILATION_ITER,
+            display_mode=self.cortical_mode_combo.currentText(),
+            file_names=self.file_names,
+        )
+        self._load_worker.moveToThread(self._load_thread)
+        self._load_thread.started.connect(self._load_worker.run)
+        self._load_worker.progressed.connect(self._progress)
+        self._load_worker.finished.connect(lambda data, key=cache_key: self._on_load_finished(key, data))
+        self._load_worker.failed.connect(self._on_load_failed)
+        self._load_worker.finished.connect(self._cleanup_load_thread)
+        self._load_worker.failed.connect(self._cleanup_load_thread)
+        self._load_thread.start()
+
+    def _on_load_finished(self, cache_key, data: dict):
+        self._remember_cache(cache_key, data)
+        self._apply_loaded_data(data)
+        self._loading = False
+        self._set_nav_enabled(True)
+        self._progress_bar.setVisible(False)
+        if self._pending_load_index is not None and self._pending_load_index != self.case_index:
+            nxt = self._pending_load_index
+            self._pending_load_index = None
+            QTimer.singleShot(0, lambda: self.load_case(nxt))
+        else:
+            self._pending_load_index = None
+
+    def _on_load_failed(self, message: str):
+        self._loading = False
+        self._progress_bar.setVisible(False)
+        self._set_status(f"Error: {message}", _C_WARN)
+        self._set_nav_enabled(True)
+        self._pending_load_index = None
+
     def _apply_loaded_data(self, data: dict):
-        """Apply loaded numpy arrays to napari layers and update UI."""
-        raw  = data["raw"]
-        cort = data["cort"]
-        sub  = data["sub"]
-        self.raw_data             = raw
-        self.cortical_data        = cort
-        self.cortical_roi_data    = data["cort_roi"]
-        self.cortical_cube_data   = data["cort_cube"]
-        self.cube_mask_data       = data["cube_mask"]
-        self.subcortical_data     = sub
-        self._reoriented_affine   = data["reoriented_affine"]
-        self._zooms               = data["zooms"]
+        raw = data['raw']
+        cort = data['cort']
+        sub = data['sub']
+        self.raw_data = raw
+        self.cortical_data = cort
+        self.cortical_roi_data = data['cort_roi']
+        self.cortical_cube_data = data['cort_cube']
+        self.cube_mask_data = data['cube_mask']
+        self.subcortical_data = sub
+        self._reoriented_affine = data['reoriented_affine']
+        self._zooms = data['zooms']
         opacity = self.contrast_dlg.seg_opacity_spin.value()
-        sc = data["zooms"]   # (z0_mm, z1_mm, z2_mm) — physical spacing per data axis
-        self._progress(99, "Adding layers…")
-        self.raw_layer = self.raw_canvas.add_image(
-            raw, name="raw_qsm", colormap="gray",
-            contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH), scale=sc)
-        self.seg_cortical_layer = self.raw_canvas.add_labels(
-            data["cortical_seg"], name="cortical_labels",
-            opacity=opacity, visible=self.cort_seg_cb.isChecked(), scale=sc)
-        self.seg_subcortical_layer = self.raw_canvas.add_labels(
-            data["subcortical_seg"], name="subcortical_labels",
-            opacity=opacity, visible=self.sub_seg_cb.isChecked(), scale=sc)
-        self._loaded_cortical_seg = data["cortical_seg"]
-        self._loaded_subcortical_seg = data["subcortical_seg"]
-        self.cortical_layer = self.cortical_canvas.add_image(
-            cort, name="cortical_qsm", colormap="gray",
-            contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH), scale=sc)
-        self.cortical_seg_layer = self.cortical_canvas.add_labels(
-            data["cortical_seg"], name="cortical_labels",
-            opacity=opacity, visible=self.cort_seg_cb.isChecked() and self._show_seg_in_derived_views, scale=sc)
-        self.subcortical_layer = self.subcortical_canvas.add_image(
-            sub, name="subcortical_qsm", colormap="gray",
-            contrast_limits=(DEFAULT_LOW, DEFAULT_HIGH), scale=sc)
-        self.subcortical_seg_layer = self.subcortical_canvas.add_labels(
-            data["subcortical_seg"], name="subcortical_labels",
-            opacity=opacity, visible=self.sub_seg_cb.isChecked() and self._show_seg_in_derived_views, scale=sc)
+        sc = data['zooms']
+        self._progress(99, 'Adding layers…')
+        raw_limits = tuple(self.raw_layer.contrast_limits) if self.raw_layer is not None else (DEFAULT_LOW, DEFAULT_HIGH)
+        cort_limits = tuple(self.cortical_layer.contrast_limits) if self.cortical_layer is not None else (DEFAULT_LOW, DEFAULT_HIGH)
+        sub_limits = tuple(self.subcortical_layer.contrast_limits) if self.subcortical_layer is not None else (DEFAULT_LOW, DEFAULT_HIGH)
+        self._loaded_cortical_seg = data['cortical_seg']
+        self._loaded_subcortical_seg = data['subcortical_seg']
+        self.raw_layer = self._update_image_layer('raw_layer', self.raw_canvas, raw, name='raw_qsm', scale=sc, contrast_limits=raw_limits)
+        self.seg_cortical_layer = self._update_label_layer('seg_cortical_layer', self.raw_canvas, data['cortical_seg'], name='cortical_labels', scale=sc, opacity=opacity, visible=self.cort_seg_cb.isChecked())
+        self.seg_subcortical_layer = self._update_label_layer('seg_subcortical_layer', self.raw_canvas, data['subcortical_seg'], name='subcortical_labels', scale=sc, opacity=opacity, visible=self.sub_seg_cb.isChecked())
+        self.cortical_layer = self._update_image_layer('cortical_layer', self.cortical_canvas, cort, name='cortical_qsm', scale=sc, contrast_limits=cort_limits)
+        self.cortical_seg_layer = self._update_label_layer('cortical_seg_layer', self.cortical_canvas, data['cortical_seg'], name='cortical_labels', scale=sc, opacity=opacity, visible=self.cort_seg_cb.isChecked() and self._show_seg_in_derived_views)
+        self.subcortical_layer = self._update_image_layer('subcortical_layer', self.subcortical_canvas, sub, name='subcortical_qsm', scale=sc, contrast_limits=sub_limits)
+        self.subcortical_seg_layer = self._update_label_layer('subcortical_seg_layer', self.subcortical_canvas, data['subcortical_seg'], name='subcortical_labels', scale=sc, opacity=opacity, visible=self.sub_seg_cb.isChecked() and self._show_seg_in_derived_views)
+        for key, path in data.get('generated_paths', {}).items():
+            setattr(self.cases[self.case_index], key, path)
         self._apply_orientation(force_mid=True)
-        QTimer.singleShot(120, self._fit_all)
-        # Restore QC fields
+        self._fit_all(force=True)
         case = self.cases[self.case_index]
-        rec  = self.results.get(case.case_id, QCRecord(case_id=case.case_id))
+        rec = self.results.get(case.case_id, QCRecord(case_id=case.case_id))
         for w in (self.cortex_combo, self.subcortex_combo,
                   self.cort_label_combo, self.sub_label_combo, self.notes_edit, self.review_flag_cb):
             w.blockSignals(True)
@@ -1709,7 +1832,7 @@ class ReviewerMainWindow(QMainWindow):
                     return
             combo.setCurrentIndex(0)
         _restore_label_combo(self.cort_label_combo, rec.cort_label_ok)
-        _restore_label_combo(self.sub_label_combo,  rec.sub_label_ok)
+        _restore_label_combo(self.sub_label_combo, rec.sub_label_ok)
         self.notes_edit.setPlainText(rec.notes)
         self.review_flag_cb.setChecked(bool(rec.marked_for_review))
         for w in (self.cortex_combo, self.subcortex_combo,
@@ -1723,26 +1846,31 @@ class ReviewerMainWindow(QMainWindow):
         else:
             self.status_label.setText("Status:  ✏ unsaved")
             self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:10pt;")
-        mode_label = self.cortical_mode_combo.currentText()
-        self._cortical_roi_source_ok = bool(data["cort_roi_ok"])
-        self._cortical_cube_source_ok = bool(data["cort_cube_ok"])
-        self._subcortical_source_ok = bool(data["sub_ok"])
+        self._cortical_roi_source_ok = bool(data['cort_roi_ok'])
+        self._cortical_cube_source_ok = bool(data['cort_cube_ok'])
+        self._subcortical_source_ok = bool(data['sub_ok'])
         self._refresh_source_label()
-        nat_str  = " → ".join(data["native_axcodes"])
-        ck       = self.canonical_combo.currentText()
+        nat_str = " → ".join(data['native_axcodes'])
+        ck = self.canonical_combo.currentText()
         reor_str = f"  (→ {ck})" if ck != "Native" else ""
         self.orient_label.setText(f"Native: {nat_str}{reor_str}")
-        z = data["zooms"]
-        self.spacing_label.setText(
-            f"Spacing: {z[0]:.3f} × {z[1]:.3f} × {z[2]:.3f} mm")
+        z = data['zooms']
+        self.spacing_label.setText(f"Spacing: {z[0]:.3f} × {z[1]:.3f} × {z[2]:.3f} mm")
         self.current_saved = saved
         self._refresh_all_case_list_items()
         self._refresh_case_list_item(case.case_id, rec)
         self.case_list.setCurrentRow(self.case_index)
         self.contrast_dlg.reset()
-        self._set_nav_enabled(True)
-        self._progress_bar.setVisible(False)
         self._set_status(f"Loaded  {case.case_id}", _C_SUCCESS)
+
+    def closeEvent(self, event):
+        try:
+            self._wheel_timer.stop()
+            self._fit_timer.stop()
+            self._cleanup_load_thread()
+        finally:
+            super().closeEvent(event)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
