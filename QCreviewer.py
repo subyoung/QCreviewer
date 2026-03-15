@@ -1,7 +1,7 @@
 """
 QSM QC Reviewer v13
 =====================
-
+Supports Windows and macOS with a consistent dark-themed UI and identical features.  See the GitHub repo for installation instructions, usage guide, and changelog:
 """
 import os
 import sys
