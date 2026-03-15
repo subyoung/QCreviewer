@@ -359,13 +359,13 @@ class StyledComboBox(QComboBox):
 
 
 def _make_combo(items: Optional[List[str]] = None,
-                placeholder: str = "",
+                placeholder: Optional[str] = None,
                 min_width: int = 0,
                 max_width: int = 0,
                 expanding: bool = True) -> StyledComboBox:
     """Build a StyledComboBox with optional item list and size constraints."""
     cb = StyledComboBox()
-    if placeholder:
+    if placeholder is not None:
         cb.addItem(placeholder)
     if items:
         cb.addItems(items)
