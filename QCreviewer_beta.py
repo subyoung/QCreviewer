@@ -36,8 +36,53 @@ from dataclasses import dataclass, asdict, fields
 from typing import Callable, Dict, List, Optional, Tuple
 from collections import OrderedDict
 
+<<<<<<< Updated upstream
 _IS_MACOS = sys.platform == "darwin"
 _SYSTEM_FONT = ".AppleSystemUIFont, Helvetica Neue, Arial" if _IS_MACOS else "Segoe UI, Arial"
+=======
+_IS_MACOS   = sys.platform == "darwin"
+_IS_WINDOWS = sys.platform == "win32"
+_SYSTEM_FONT = ".AppleSystemUIFont, Helvetica Neue, Arial" if _IS_MACOS else "Segoe UI, Arial"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  TUNABLE SIZING CONSTANTS
+#  All visual dimensions are defined here.  Change these to adjust the UI.
+#  Two values per constant: (Windows, macOS/Linux)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# -- Font sizes (pt) ----------------------------------------------------------
+_BASE_PT         = 7 if _IS_WINDOWS else 11  # primary UI font
+_SMALL_PT        =  5 if _IS_WINDOWS else 10  # secondary/dim labels
+_STATUS_PT       =  6 if _IS_WINDOWS else  9  # status bar, progress
+
+# -- Canvas header bar --------------------------------------------------------
+_HDR_H           = 20 if _IS_WINDOWS else 42
+_HDR_COMBO_MIN_H = 8 if _IS_WINDOWS else 28
+_HDR_COMBO_MAX_H = 10 if _IS_WINDOWS else 34
+_HDR_MARGIN_V    =  0 if _IS_WINDOWS else  5  # stable: hl.setContentsMargins(8,0,8,0)
+
+# -- Direction bar (R/L/A/P labels) ------------------------------------------
+_DIR_H           = 12 if _IS_WINDOWS else 26
+_DIR_PT          =  6 if _IS_WINDOWS else 10
+
+# -- Global widget sizing -----------------------------------------------------
+_GB_MARGIN_TOP   = 8 if _IS_WINDOWS else 22
+_GB_PAD_TOP      =  2 if _IS_WINDOWS else  8
+_COMBO_MIN_H     = 15 if _IS_WINDOWS else 24
+_ITEM_PAD        =  2 if _IS_WINDOWS else  3
+_ITEM_MIN_H      = 15 if _IS_WINDOWS else 22
+_COMBO_ITEM_PAD  =  1 if _IS_WINDOWS else  4
+
+# -- Panel layout -------------------------------------------------------------
+_PANEL_MARGIN    = 1 if _IS_WINDOWS else 10
+_PANEL_SPACING   = 1 if _IS_WINDOWS else  8
+_STACKED_SPACING =  1 if _IS_WINDOWS else  3
+
+# -- Specific widget heights --------------------------------------------------
+_NOTES_MIN_H     = 45 if _IS_WINDOWS else 60
+_NOTES_MAX_H     = 75 if _IS_WINDOWS else 110
+_CASELIST_MIN_H  = 80 if _IS_WINDOWS else 120
+>>>>>>> Stashed changes
 import nibabel as nib
 import nibabel.orientations as nibo
 import numpy as np
@@ -69,6 +114,10 @@ FILE_NAMES = {
     "cortical_qsm_cube": "QSM_TOTAL_mcpc3Ds_chi_SFCR_Avg_wGDC_cortical_expanded.nii.gz",
     "subcortical_qsm":   "QSM_TOTAL_mcpc3Ds_chi_SFCR_Avg_wGDC_subcortical_expanded.nii.gz",
 }
+<<<<<<< Updated upstream
+=======
+SEGMENTATION_TASK = False  # if True, show segmentation accuracy labeling section
+>>>>>>> Stashed changes
 SAVE_GENERATED_MASKED_QSM = True
 SUBCORTICAL_MARGIN        = 3
 CORTICAL_DILATION_ITER    = 2
@@ -142,13 +191,18 @@ _C_SYNC_ON   = "#4a9eff"
 _GLOBAL_CSS = f"""
 QMainWindow, QWidget {{
     background: {_C_BG}; color: {_C_TEXT};
+<<<<<<< Updated upstream
     font-family: {_SYSTEM_FONT}; font-size: 11pt;
+=======
+    font-family: {_SYSTEM_FONT}; font-size: {_BASE_PT}pt;
+>>>>>>> Stashed changes
 }}
 QSplitter::handle           {{ background: {_C_BORDER}; }}
 QSplitter::handle:horizontal {{ width: 5px; }}
 QSplitter::handle:vertical   {{ height: 5px; }}
 QGroupBox {{
     border: 1px solid {_C_BORDER}; border-radius: 5px;
+<<<<<<< Updated upstream
     margin-top: 24px; padding-top: 10px;
     font-size: 11pt; font-weight: 600; color: {_C_ACCENT};
 }}
@@ -157,10 +211,22 @@ QLabel           {{ font-size: 11pt; }}
 QComboBox {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
     border-radius: 4px; padding: 5px 12px; font-size: 11pt; min-height: 26px;
+=======
+    margin-top: {_GB_MARGIN_TOP}px; padding-top: {_GB_PAD_TOP}px;
+    font-size: {_BASE_PT}pt; font-weight: 600; color: {_C_ACCENT};
+}}
+QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
+QLabel           {{ font-size: {_BASE_PT}pt; }}
+QComboBox {{
+    background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
+    border-radius: 4px; padding: {'4px 10px' if _IS_WINDOWS else '3px 8px'}; font-size: {_BASE_PT}pt;
+    min-height: {_COMBO_MIN_H}px;
+>>>>>>> Stashed changes
 }}
 QComboBox:hover {{ border-color: {_C_ACCENT}; }}
 QComboBox QAbstractItemView {{
     background: {_C_PANEL}; color: {_C_TEXT};
+<<<<<<< Updated upstream
     selection-background-color: {_C_ACCENT}; font-size: 11pt;
 }}
 QComboBox QAbstractItemView::item {{ padding: 5px 10px; min-height: 26px; }}
@@ -170,19 +236,41 @@ QListWidget {{
     border-radius: 4px; font-size: 11pt;
 }}
 QListWidget::item           {{ padding: 4px 8px; min-height: 24px; }}
+=======
+    selection-background-color: {_C_ACCENT}; font-size: {_BASE_PT}pt;
+}}
+QComboBox QAbstractItemView::item {{
+    padding: {_COMBO_ITEM_PAD}px 10px; min-height: {_ITEM_MIN_H}px;
+}}
+QComboBox QAbstractItemView::item:hover {{ background: {_C_HEADER}; color: {_C_TEXT}; }}
+QListWidget {{
+    background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
+    border-radius: 4px; font-size: {_BASE_PT}pt;
+}}
+QListWidget::item           {{ padding: {_ITEM_PAD}px 6px; min-height: {_ITEM_MIN_H}px; }}
+>>>>>>> Stashed changes
 QListWidget::item:selected  {{ background: {_C_ACCENT}; color: white; }}
 QListWidget::item:hover     {{ background: {_C_HEADER}; }}
 QTextEdit {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
+<<<<<<< Updated upstream
     border-radius: 4px; font-size: 11pt; padding: 6px;
 }}
 QPushButton {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
     border-radius: 4px; padding: 7px 18px; font-size: 11pt;
+=======
+    border-radius: 4px; font-size: {_BASE_PT}pt; padding: {'5px' if _IS_WINDOWS else '3px'};
+}}
+QPushButton {{
+    background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
+    border-radius: 4px; padding: {'6px 16px' if _IS_WINDOWS else '4px 12px'}; font-size: {_BASE_PT}pt;
+>>>>>>> Stashed changes
 }}
 QPushButton:hover   {{ background: {_C_HEADER}; border-color: {_C_ACCENT}; }}
 QPushButton:pressed {{ background: {_C_ACCENT}; color: white; }}
 QPushButton:disabled {{ color: {_C_DIM}; border-color: {_C_BORDER}; }}
+<<<<<<< Updated upstream
 QCheckBox           {{ color: {_C_TEXT}; font-size: 11pt; spacing: 7px; }}
 QCheckBox:hover     {{ color: white; }}
 QDoubleSpinBox {{
@@ -194,11 +282,25 @@ QLineEdit {{
     border-radius: 4px; padding: 5px 10px; font-size: 11pt;
 }}
 QLineEdit:focus {{ border-color: {_C_ACCENT}; }}
+=======
+QCheckBox           {{ color: {_C_TEXT}; font-size: {_BASE_PT}pt; spacing: 6px; }}
+{"QCheckBox:hover     { color: white; }" if not _IS_WINDOWS else ""}
+QDoubleSpinBox {{
+    background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
+    border-radius: 4px; padding: 3px 8px; font-size: {_BASE_PT}pt;
+}}
+{"QLineEdit {" if not _IS_WINDOWS else ""}
+{"    background: " + _C_PANEL + "; color: " + _C_TEXT + "; border: 1px solid " + _C_BORDER + ";" if not _IS_WINDOWS else ""}
+{"    border-radius: 4px; padding: 3px 8px; font-size: " + str(_BASE_PT) + "pt;" if not _IS_WINDOWS else ""}
+{"}" if not _IS_WINDOWS else ""}
+{"QLineEdit:focus { border-color: " + _C_ACCENT + "; }" if not _IS_WINDOWS else ""}
+>>>>>>> Stashed changes
 QScrollArea        {{ border: none; background: transparent; }}
 QScrollBar:vertical {{
     background: {_C_BG}; width: 8px; border-radius: 4px;
 }}
 QScrollBar::handle:vertical {{
+<<<<<<< Updated upstream
     background: {_C_BORDER}; border-radius: 4px; min-height: 24px;
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
@@ -216,11 +318,36 @@ QMenu::item         {{ padding: 5px 24px; }}
 QMenu::item:selected {{ background: {_C_ACCENT}; }}
 QDialog {{ background: {_C_BG}; color: {_C_TEXT}; }}
 QDialogButtonBox QPushButton {{ min-width: 90px; padding: 7px 18px; }}
+=======
+    background: {_C_BORDER}; border-radius: 4px; min-height: {'24px' if _IS_WINDOWS else '20px'};
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
+QStatusBar         {{ background: {_C_HEADER}; color: {_C_DIM}; font-size: {_STATUS_PT}pt; }}
+QProgressBar {{
+    background: {_C_PANEL}; border: 1px solid {_C_BORDER}; border-radius: 3px;
+    text-align: center; color: {_C_TEXT}; font-size: {_STATUS_PT}pt; max-height: {'16px' if _IS_WINDOWS else '14px'};
+}}
+QProgressBar::chunk {{ background: {_C_ACCENT}; border-radius: 2px; }}
+QMenuBar            {{ background: {_C_HEADER}; color: {_C_TEXT}; font-size: {_BASE_PT}pt; }}
+{"QMenuBar::item      { padding: 4px 10px; }" if not _IS_WINDOWS else ""}
+QMenuBar::item:selected {{ background: {_C_ACCENT}; }}
+QMenu               {{ background: {_C_PANEL}; color: {_C_TEXT};
+                       border: 1px solid {_C_BORDER}; font-size: {_BASE_PT}pt; }}
+{"QMenu::item         { padding: 5px 28px 5px 28px; }" if not _IS_WINDOWS else ""}
+{"QMenu::item:checked { padding: 5px 28px 5px 10px; }" if not _IS_WINDOWS else ""}
+QMenu::item:selected {{ background: {_C_ACCENT}; }}
+{"QDialog { background: " + _C_BG + "; color: " + _C_TEXT + "; }" if not _IS_WINDOWS else ""}
+{"QDialogButtonBox QPushButton { min-width: 70px; padding: 4px 12px; }" if not _IS_WINDOWS else ""}
+>>>>>>> Stashed changes
 """
 _SAVE_BTN_CSS = f"""
 QPushButton {{
     background: {_C_ACCENT}; color: white; border: none;
+<<<<<<< Updated upstream
     border-radius: 4px; padding: 10px 20px; font-size: 12pt; font-weight: 600;
+=======
+    border-radius: 4px; padding: {'9px 18px' if _IS_WINDOWS else '6px 14px'}; font-size: {_BASE_PT+1}pt; font-weight: 600;
+>>>>>>> Stashed changes
 }}
 QPushButton:hover   {{ background: #5aabff; }}
 QPushButton:pressed {{ background: #3a8eef; }}
@@ -229,7 +356,11 @@ QPushButton:disabled {{ background: {_C_BORDER}; color: {_C_DIM}; }}
 _NAV_BTN_CSS = f"""
 QPushButton {{
     background: {_C_PANEL}; color: {_C_TEXT}; border: 1px solid {_C_BORDER};
+<<<<<<< Updated upstream
     border-radius: 4px; padding: 8px 22px; font-size: 11pt;
+=======
+    border-radius: 4px; padding: {'7px 20px' if _IS_WINDOWS else '4px 12px'}; font-size: {_BASE_PT}pt;
+>>>>>>> Stashed changes
 }}
 QPushButton:hover   {{ background: {_C_HEADER}; border-color: {_C_ACCENT}; color: {_C_ACCENT}; }}
 QPushButton:disabled {{ color: {_C_DIM}; border-color: {_C_BORDER}; }}
@@ -237,11 +368,19 @@ QPushButton:disabled {{ color: {_C_DIM}; border-color: {_C_BORDER}; }}
 _QC_ERROR_STYLE = f"""
 QComboBox {{
     background: {_C_PANEL}; color: {_C_TEXT};
+<<<<<<< Updated upstream
     border: 2px solid #d65c5c; border-radius: 4px; padding: 5px 12px; font-size: 11pt;
 }}
 QComboBox QAbstractItemView {{
     background: {_C_PANEL}; color: {_C_TEXT};
     selection-background-color: {_C_ACCENT}; font-size: 11pt;
+=======
+    border: 2px solid #d65c5c; border-radius: 4px; padding: 4px 10px; font-size: {_BASE_PT}pt;
+}}
+QComboBox QAbstractItemView {{
+    background: {_C_PANEL}; color: {_C_TEXT};
+    selection-background-color: {_C_ACCENT}; font-size: {_BASE_PT}pt;
+>>>>>>> Stashed changes
 }}
 """
 ZOOM_PRESETS = [25, 50, 75, 100, 125, 150, 200, 300]
@@ -265,7 +404,11 @@ QListView {{
     outline: none; padding: 4px 0;
 }}
 QListView::item {{
+<<<<<<< Updated upstream
     padding: 6px 14px; min-height: 28px;
+=======
+    padding: 2px 10px; min-height: 18px;
+>>>>>>> Stashed changes
     color: {_C_TEXT};
 }}
 QListView::item:selected, QListView::item:selected:hover {{
@@ -443,11 +586,31 @@ class StartupConfigDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("QSM QC Reviewer - Path Setup")
         self.setWindowIcon(_make_app_icon())
+<<<<<<< Updated upstream
         self.setMinimumWidth(1100)
+=======
+        # Size to fit within the screen, no larger than needed
+        screen = QApplication.primaryScreen()
+        if _IS_WINDOWS:
+            # Windows: fixed sizes matching stable version
+            self.setMinimumWidth(500)
+        else:
+            # macOS: adaptive sizing
+            self.setMinimumWidth(640)
+            if screen is not None:
+                sg = screen.availableGeometry()
+                dlg_w = min(int(sg.width() * 0.75), 960)
+                dlg_h = min(int(sg.height() * 0.85), 780)
+            else:
+                dlg_w, dlg_h = (860, 680)
+            self.resize(dlg_w, dlg_h)
+            self.setSizeGripEnabled(True)   # user can resize
+>>>>>>> Stashed changes
         self.setModal(True)
         self.setStyleSheet(_GLOBAL_CSS)
         self._defaults_file_names = dict(defaults_file_names or FILE_NAMES)
         lay = QVBoxLayout(self)
+<<<<<<< Updated upstream
         lay.setContentsMargins(20, 20, 20, 16)
         lay.setSpacing(14)
         title_row = QHBoxLayout()
@@ -461,6 +624,23 @@ class StartupConfigDialog(QDialog):
         title_col.setSpacing(2)
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
+=======
+        lay.setContentsMargins(16, 16, 16, 16)
+        lay.setSpacing(12)
+        title_row = QHBoxLayout()
+        logo = QLabel()
+        logo.setPixmap(_make_app_icon().pixmap(28, 28))
+        title = QLabel("Launch Settings")
+        title.setStyleSheet(f"font-size: {'15' if _IS_WINDOWS else str(_BASE_PT+4)}pt; font-weight: 700; color: {_C_ACCENT};")
+        # subtitle = QLabel("Set the data folder, CSV file name, display options, and the six file names before entering the labeling UI.")
+        # subtitle.setStyleSheet(f"color: {_C_DIM};{'font-size:' + str(_BASE_PT) + 'pt;' if not _IS_WINDOWS else ''}")
+        # subtitle.setWordWrap(True)
+        title_col = QVBoxLayout()
+        if not _IS_WINDOWS:
+            title_col.setSpacing(2)
+        title_col.addWidget(title)
+        # title_col.addWidget(subtitle)
+>>>>>>> Stashed changes
         title_row.addWidget(logo)
         title_row.addSpacing(8)
         title_row.addLayout(title_col, 1)
@@ -473,12 +653,22 @@ class StartupConfigDialog(QDialog):
         folder_row = QHBoxLayout()
         folder_row.setSpacing(8)
         folder_lbl = QLabel("Data folder:")
+<<<<<<< Updated upstream
         folder_lbl.setFixedWidth(130)
+=======
+        folder_lbl.setMinimumWidth(120)
+        folder_lbl.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+>>>>>>> Stashed changes
         folder_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         self.root_edit = QLineEdit(defaults_root)
         self.root_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         browse_btn = QPushButton("Browse…")
+<<<<<<< Updated upstream
         browse_btn.setFixedWidth(90)
+=======
+        browse_btn.setMinimumWidth(80)
+        browse_btn.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+>>>>>>> Stashed changes
         browse_btn.clicked.connect(self._browse_root)
         folder_row.addWidget(folder_lbl)
         folder_row.addWidget(self.root_edit, 1)
@@ -489,21 +679,41 @@ class StartupConfigDialog(QDialog):
         csv_row = QHBoxLayout()
         csv_row.setSpacing(8)
         csv_lbl = QLabel("CSV file name:")
+<<<<<<< Updated upstream
         csv_lbl.setFixedWidth(130)
+=======
+        csv_lbl.setMinimumWidth(120)
+        csv_lbl.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+>>>>>>> Stashed changes
         csv_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         csv_default_name = os.path.basename(defaults_output_csv) if defaults_output_csv else "qc_results.csv"
         self.csv_edit = QLineEdit(csv_default_name)
         self.csv_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         csv_row.addWidget(csv_lbl)
         csv_row.addWidget(self.csv_edit, 1)
+<<<<<<< Updated upstream
         csv_row.addSpacing(98)  # align with folder row (browse button width + spacing)
+=======
+        # Invisible spacer to align with folder row; matches browse_btn minimum
+        _csv_spacer = QWidget()
+        _csv_spacer.setMinimumWidth(80)
+        _csv_spacer.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+        csv_row.addWidget(_csv_spacer)
+>>>>>>> Stashed changes
         box_lay.addLayout(csv_row)
         lay.addWidget(box)
         files_box = QGroupBox("Data file names")
         files_grid = QGridLayout(files_box)
+<<<<<<< Updated upstream
         files_grid.setHorizontalSpacing(12)
         files_grid.setVerticalSpacing(10)
         files_grid.setColumnMinimumWidth(0, 160)
+=======
+        files_grid.setHorizontalSpacing(10 if _IS_WINDOWS else 12)
+        files_grid.setVerticalSpacing(8 if _IS_WINDOWS else 10)
+        if not _IS_WINDOWS:
+            files_grid.setColumnMinimumWidth(0, 160)
+>>>>>>> Stashed changes
         labels = [
             ("raw_qsm", "Raw QSM:"),
             ("segmentation", "Segmentation:"),
@@ -988,10 +1198,17 @@ class ContrastDialog(QDialog):
 # ─────────────────────────────────────────────────────────────────────────────
 # ImageCanvas
 # ─────────────────────────────────────────────────────────────────────────────
+<<<<<<< Updated upstream
 _DIR_CSS  = (f"font-size:10pt; color:{_C_DIM}; background:{_C_DIR_BAR};"
              " padding:2px 8px; letter-spacing:1px;")
 _SYNC_CSS = (f"QCheckBox {{ color:#aabbcc; font-size:10pt; }}"
              f"QCheckBox::indicator {{ width:14px; height:14px; }}")
+=======
+_DIR_CSS  = (f"font-size:{_DIR_PT}pt; color:{_C_DIM}; background:{_C_DIR_BAR};"
+             " padding:2px 8px; letter-spacing:1px;")
+_SYNC_CSS = (f"QCheckBox {{ color:#aabbcc; font-size:{_SMALL_PT}pt; }}"
+             f"QCheckBox::indicator {{ width:13px; height:13px; }}")
+>>>>>>> Stashed changes
 
 # Shared stylesheet for ALL combos that live in a canvas title bar.
 # Overrides the global 11pt/5px-padding rule so both zoom and mode combos
@@ -1000,9 +1217,15 @@ _HDR_COMBO_CSS = (
     f"QComboBox {{"
     f"  background:{_C_PANEL}; color:{_C_TEXT};"
     f"  border:1px solid {_C_BORDER}; border-radius:4px;"
+<<<<<<< Updated upstream
     f"  font-size:11pt; padding:4px 10px;"
     f"  min-height:28px; max-height:34px;"
     f"}}"
+=======
+    f"  font-size:{_BASE_PT}pt; padding:{'1px 6px' if _IS_WINDOWS else '1px 6px'};"
+    + (f"  min-height:{_HDR_COMBO_MIN_H}px; max-height:{_HDR_COMBO_MAX_H}px;" if not _IS_WINDOWS else "")
+    + f"}}"
+>>>>>>> Stashed changes
     f"QComboBox:hover {{ border-color:{_C_ACCENT}; }}"
 )
 class ImageCanvas(QWidget):
@@ -1016,14 +1239,20 @@ class ImageCanvas(QWidget):
         # All interactive widgets in the header share one height so they
         # sit on the same baseline. We give the row enough room for 11pt text
         # with comfortable padding, then let Qt centre items vertically.
+<<<<<<< Updated upstream
         _HDR_H    = 48   # total header row height — roomy for 11pt combos
         _COMBO_MIN = 32  # minimum combo height (CSS also enforces this)
         _COMBO_MAX = 36  # maximum combo height
+=======
+        _COMBO_MIN = _HDR_COMBO_MIN_H
+        _COMBO_MAX = _HDR_COMBO_MAX_H
+>>>>>>> Stashed changes
 
         hdr = QWidget()
         hdr.setStyleSheet(f"background:{_C_HEADER};")
         hdr.setFixedHeight(_HDR_H)
         hl = QHBoxLayout(hdr)
+<<<<<<< Updated upstream
         hl.setContentsMargins(10, 6, 10, 6)
         hl.setSpacing(8)
         hl.setAlignment(Qt.AlignVCenter)
@@ -1040,11 +1269,36 @@ class ImageCanvas(QWidget):
         zoom_lbl = QLabel("Zoom")
         zoom_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:11pt;")
         zoom_lbl.setAlignment(Qt.AlignVCenter)
+=======
+        if _IS_WINDOWS:
+            hl.setContentsMargins(4, 0, 4, 0) 
+        else:
+            hl.setContentsMargins(8, _HDR_MARGIN_V, 8, _HDR_MARGIN_V)
+            hl.setAlignment(Qt.AlignVCenter)
+        hl.setSpacing(6)
+
+        self.title_label = QLabel(title)
+        self.title_label.setStyleSheet(f"font-weight:600; font-size:{_BASE_PT}pt; color:{_C_TEXT};")
+        if not _IS_WINDOWS:
+            self.title_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+
+        self.title_right_layout = QHBoxLayout()
+        self.title_right_layout.setContentsMargins(0, 0, 0, 0)
+        self.title_right_layout.setSpacing(3 if _IS_WINDOWS else 0)
+        if not _IS_WINDOWS:
+            self.title_right_layout.setAlignment(Qt.AlignVCenter)
+
+        zoom_lbl = QLabel("Zoom")
+        zoom_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+        if not _IS_WINDOWS:
+            zoom_lbl.setAlignment(Qt.AlignVCenter)
+>>>>>>> Stashed changes
 
         self.zoom_combo = StyledComboBox()
         self.zoom_combo.setEditable(True)
         self.zoom_combo.setInsertPolicy(QComboBox.NoInsert)
         self.zoom_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+<<<<<<< Updated upstream
         self.zoom_combo.setMinimumWidth(110)
         self.zoom_combo.setMaximumWidth(155)
         self.zoom_combo.setMinimumHeight(_COMBO_MIN)
@@ -1055,6 +1309,22 @@ class ImageCanvas(QWidget):
         for pct in ZOOM_PRESETS:
             self.zoom_combo.addItem(f"{pct}%")
         self.zoom_combo.setCurrentText("Fit window")
+=======
+        if _IS_WINDOWS:
+            self.zoom_combo.setMinimumWidth(70)
+            self.zoom_combo.setMaximumWidth(168)
+        else:
+            self.zoom_combo.setMinimumWidth(90)
+            self.zoom_combo.setMaximumWidth(145)
+            self.zoom_combo.setMinimumHeight(_COMBO_MIN)
+            self.zoom_combo.setMaximumHeight(_COMBO_MAX)
+            self.zoom_combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed) 
+        self.zoom_combo.setStyleSheet(_HDR_COMBO_CSS)
+        self.zoom_combo.addItem("Autofit")
+        for pct in ZOOM_PRESETS:
+            self.zoom_combo.addItem(f"{pct}%")
+        self.zoom_combo.setCurrentText("Autofit")
+>>>>>>> Stashed changes
         self.zoom_combo.lineEdit().editingFinished.connect(self._on_zoom_combo_edited)
         self.zoom_combo.currentTextChanged.connect(self._on_zoom_combo_changed)
 
@@ -1076,7 +1346,11 @@ class ImageCanvas(QWidget):
         # direction bar
         dir_bar = QWidget()
         dir_bar.setStyleSheet(f"background:{_C_DIR_BAR};")
+<<<<<<< Updated upstream
         dir_bar.setFixedHeight(22)
+=======
+        dir_bar.setFixedHeight(_DIR_H)
+>>>>>>> Stashed changes
         dl = QHBoxLayout(dir_bar)
         dl.setContentsMargins(6, 0, 6, 0); dl.setSpacing(0)
         self._lbl_left  = QLabel("← ?"); self._lbl_left.setStyleSheet(_DIR_CSS)
@@ -1095,14 +1369,35 @@ class ImageCanvas(QWidget):
         self._canvas_native: Optional[QWidget] = self._find_native()
         self._wheel_filter: Optional[WheelScrollFilter] = None
         self._last_fit_signature = None
+<<<<<<< Updated upstream
+=======
+        self._dims_patched = False
+        # Custom slice-info label (replaces napari's clipping spinbox)
+        self._slice_info_lbl: Optional[QLabel] = None
+
+        # Patch dims bar widgets after first layer insertion
+        self.viewer_model.layers.events.inserted.connect(
+            lambda _e: QTimer.singleShot(80, self._patch_napari_dims_bar)
+        )
+
+>>>>>>> Stashed changes
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(hdr)
         lay.addWidget(dir_bar)
         lay.addWidget(self.qt_viewer, 1)
+<<<<<<< Updated upstream
         self.viewer_model.layers.selection.events.active.connect(
             self._on_layer_active)
+=======
+
+        self.viewer_model.layers.selection.events.active.connect(
+            self._on_layer_active)
+        # Connect dims current_step to update our slice label
+        self.viewer_model.dims.events.current_step.connect(
+            self._on_dims_step_changed)
+>>>>>>> Stashed changes
     def _find_native(self):
         for attr in ("canvas", "_canvas", "native"):
             obj = getattr(self.qt_viewer, attr, None)
@@ -1114,6 +1409,110 @@ class ImageCanvas(QWidget):
     def _on_layer_active(self, event=None):
         try: self.viewer_model.camera.mouse_zoom = False
         except AttributeError: pass
+<<<<<<< Updated upstream
+=======
+
+    def _on_dims_step_changed(self, event=None):
+        """Update napari dims bar and forcefully defend spinbox width."""
+        self._patch_napari_dims_bar()
+
+        from qtpy.QtWidgets import QWidget, QAbstractSpinBox
+        
+        # 1. 终极防御机制：无情碾压 Napari 内部的动态尺寸计算
+        # 每次切片变动时，强行重置 SpinBox 的最小和最大宽度，彻底封死它缩水的可能！
+        for child in self.qt_viewer.findChildren(QWidget):
+            if isinstance(child, QAbstractSpinBox) or 'spinbox' in type(child).__name__.lower():
+                child.setMinimumWidth(50 if _IS_WINDOWS else 60)
+                child.setMaximumWidth(80)
+
+        # 2. 更新右侧总数 Label，使其配合输入框显示为 "/ 47" 的优雅格式
+        if getattr(self, '_slice_info_lbl', None) is not None:
+            try:
+                dims = self.viewer_model.dims
+                scroll_ax = getattr(self, '_scroll_axis_hint', None)
+                if scroll_ax is None:
+                    for ax in range(len(dims.nsteps)):
+                        if dims.nsteps[ax] > 1:
+                            scroll_ax = ax
+                            break
+                if scroll_ax is not None and scroll_ax < len(dims.current_step):
+                    total = int(dims.nsteps[scroll_ax])
+                    self._slice_info_lbl.setText(f"/ {total}")
+            except Exception:
+                pass
+
+    def _patch_napari_dims_bar(self):
+        """
+        一次性基础样式修补。
+        """
+        if getattr(self, '_dims_patched', False):
+            return
+
+        from qtpy.QtWidgets import QWidget, QLabel, QPushButton, QAbstractSpinBox, QAbstractSlider, QSizePolicy
+        from qtpy.QtCore import Qt
+        from qtpy.QtGui import QIcon
+
+        found_slider = False
+
+        for child in self.qt_viewer.findChildren(QWidget):
+            try:
+                cn = type(child).__name__.lower()
+                tt = (child.toolTip() or '').lower()
+
+                # 隐藏废弃的坐标轴文本 ("edit to change")
+                if 'edit to change' in tt or 'dimension name' in tt:
+                    child.hide()
+                    child.setFixedSize(0, 0)
+                    continue
+
+                # 完美修复播放按钮
+                if isinstance(child, QPushButton):
+                    child.setIcon(QIcon())
+                    child.setText('▶')
+                    child.setStyleSheet(
+                        f"QPushButton {{ font-size:{_BASE_PT+2}pt; padding:0px; margin:0px; "
+                        f"background:{_C_HEADER}; color:{_C_TEXT}; "
+                        f"border:1px solid {_C_BORDER}; border-radius:3px; }}"
+                        f"QPushButton:hover {{ background:{_C_ACCENT}; color:white; }}"
+                    )
+                    child.setFixedSize(28 if _IS_WINDOWS else 32, 22 if _IS_WINDOWS else 24)
+                    continue
+
+                # 设置 SpinBox (数字输入框) 的暗黑UI样式
+                if isinstance(child, QAbstractSpinBox) or 'spinbox' in cn:
+                    child.setStyleSheet(
+                        f"background:{_C_PANEL}; color:{_C_TEXT}; "
+                        f"border:1px solid {_C_BORDER}; border-radius:3px;"
+                    )
+                    continue
+
+                # 强化滑动条的拉伸属性，逼迫它去占满两端多余的空白
+                if isinstance(child, QAbstractSlider) and 'scrollbar' not in cn:
+                    sp = child.sizePolicy()
+                    sp.setHorizontalPolicy(QSizePolicy.Expanding)
+                    child.setSizePolicy(sp)
+                    found_slider = True
+                    continue
+
+                # 抓取最右侧的 Label，准备在上面的函数中改造为 "/ 总数" 格式
+                if isinstance(child, QLabel) and child.isVisible():
+                    txt = child.text().strip()
+                    if txt.isdigit() or '/' in txt:
+                        child.setMinimumWidth(45)
+                        child.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                        child.setStyleSheet(
+                            f"color:{_C_DIM}; font-size:{_BASE_PT}pt; "
+                            f"font-family:Consolas,Menlo,monospace; padding-right:4px;"
+                        )
+                        self._slice_info_lbl = child
+
+            except Exception:
+                pass
+
+        if found_slider:
+            self._dims_patched = True
+
+>>>>>>> Stashed changes
     def set_title_right_widget(self, widget: Optional[QWidget]):
         """Insert a widget (e.g. cortical mode combo) into the title bar.
         Applies the same height bounds and stylesheet as the zoom combo."""
@@ -1124,8 +1523,14 @@ class ImageCanvas(QWidget):
                 w.setParent(None)
         if widget is not None:
             if isinstance(widget, QComboBox):
+<<<<<<< Updated upstream
                 widget.setMinimumHeight(self._hdr_combo_min)
                 widget.setMaximumHeight(self._hdr_combo_max)
+=======
+                if not _IS_WINDOWS:
+                    widget.setMinimumHeight(self._hdr_combo_min)
+                    widget.setMaximumHeight(self._hdr_combo_max)
+>>>>>>> Stashed changes
                 widget.setStyleSheet(_HDR_COMBO_CSS)
             self.title_right_layout.addWidget(widget)
 
@@ -1137,7 +1542,11 @@ class ImageCanvas(QWidget):
         if not s:
             return None
         s_low = s.lower()
+<<<<<<< Updated upstream
         if s_low in {"fit", "fit window", "fitwindow", "window", "auto"}:
+=======
+        if s_low in {"fit", "fit window", "fitwindow", "window", "auto", "autofit"}:
+>>>>>>> Stashed changes
             return "fit"
         try:
             if s.endswith('%'):
@@ -1154,14 +1563,22 @@ class ImageCanvas(QWidget):
     @staticmethod
     def _format_zoom_mode(mode) -> str:
         if mode == "fit":
+<<<<<<< Updated upstream
             return "Fit window"
+=======
+            return "Autofit"
+>>>>>>> Stashed changes
         try:
             pct = float(mode) * 100.0
             if abs(pct - round(pct)) < 1e-6:
                 return f"{int(round(pct))}%"
             return f"{pct:.1f}%"
         except Exception:
+<<<<<<< Updated upstream
             return "Fit window"
+=======
+            return "Autofit"
+>>>>>>> Stashed changes
     def _set_zoom_combo_text(self, text: str):
         self._updating_zoom_ui = True
         self.zoom_combo.setCurrentText(text)
@@ -1223,6 +1640,10 @@ class ImageCanvas(QWidget):
         try: self.viewer_model.camera.mouse_zoom = False
         except AttributeError: pass
     def set_view(self, dims_order, scroll_axis, data_shape, flip_v, flip_h):
+<<<<<<< Updated upstream
+=======
+        self._scroll_axis_hint = scroll_axis   # used by _on_dims_step_changed
+>>>>>>> Stashed changes
         self.viewer.dims.ndisplay = 2
         self.viewer.dims.order    = dims_order
         set_slice(self.viewer, data_shape[scroll_axis] // 2, scroll_axis)
@@ -1231,6 +1652,11 @@ class ImageCanvas(QWidget):
         except Exception:
             try: self.viewer.camera.flip = (flip_v, flip_h, False)
             except Exception: pass
+<<<<<<< Updated upstream
+=======
+        # Refresh slice label immediately after orientation change
+        self._on_dims_step_changed()
+>>>>>>> Stashed changes
     def fit_to_shape(self, data_shape, dims_order, zooms=None, force: bool = False):
         """Fit camera to ~90 % of canvas, then apply current zoom mode."""
         try:
@@ -1266,6 +1692,7 @@ class ReviewerMainWindow(QMainWindow):
         self.setWindowTitle("QSM QC Reviewer")
         self.setWindowIcon(_make_app_icon())
 
+<<<<<<< Updated upstream
         # Scale default window to ~88% width × ~82% height of primary screen
         screen = QApplication.primaryScreen()
         if screen is not None:
@@ -1275,6 +1702,27 @@ class ReviewerMainWindow(QMainWindow):
         else:
             w, h = 1380, 820
         self.resize(w, h)
+=======
+        # Window sizing: Windows uses fixed size matching stable version,
+        # macOS uses adaptive screen-percentage sizing.
+        if _IS_WINDOWS:
+            screnn = QApplication.primaryScreen()
+            if screnn is not None:
+                w = min(int(screnn.size().width() * 0.85), 1600)
+                h = min(int(screnn.size().height() * 0.78), 860)
+            else:
+                w, h = (1280, 760)
+            self.resize(w, h)
+        else:
+            screen = QApplication.primaryScreen()
+            if screen is not None:
+                sg = screen.availableGeometry()
+                w = min(int(sg.width()  * 0.85), 1600)
+                h = min(int(sg.height() * 0.78), 860)
+            else:
+                w, h = (1280, 760)
+            self.resize(w, h)
+>>>>>>> Stashed changes
 
         self.setStyleSheet(_GLOBAL_CSS)
         self.cases         = cases
@@ -1327,7 +1775,11 @@ class ReviewerMainWindow(QMainWindow):
         self.subcortical_canvas = ImageCanvas("Subcortical QSM")
         self.cortical_mode_combo = _make_combo(
             ["ROI only", "All regions outside subcortical"],
+<<<<<<< Updated upstream
             min_width=200, max_width=280, expanding=False)
+=======
+            min_width=150, max_width=200, expanding=False)
+>>>>>>> Stashed changes
         self.cortical_mode_combo.setCurrentText("All regions outside subcortical")
         self.cortical_mode_combo.currentTextChanged.connect(self._on_cortical_display_mode_changed)
         self.cortical_canvas.set_title_right_widget(self.cortical_mode_combo)
@@ -1612,7 +2064,11 @@ class ReviewerMainWindow(QMainWindow):
         # Reset UI labels
         self.case_label.setText("-")
         self.status_label.setText("Status:  –")
+<<<<<<< Updated upstream
         self.status_label.setStyleSheet(f"color:{_C_DIM}; font-size:12pt;")
+=======
+        self.status_label.setStyleSheet(f"color:{_C_DIM}; font-size:{_BASE_PT}pt;")
+>>>>>>> Stashed changes
         self._set_nav_enabled(False)
 
         # Kick off fresh scan (deferred so the dialog closes first)
@@ -1647,7 +2103,12 @@ class ReviewerMainWindow(QMainWindow):
         # ── left: vertical splitter (top row + bottom row) ────────────────
         self._v_splitter = QSplitter(Qt.Vertical)
         self._v_splitter.setChildrenCollapsible(False)
+<<<<<<< Updated upstream
         # top row: Raw | Cortical
+=======
+        # top row: Raw | Cortical — collapsible=False but NO minimum size constraint
+        # so the divider can be dragged to any position
+>>>>>>> Stashed changes
         self._top_splitter = QSplitter(Qt.Horizontal)
         self._top_splitter.setChildrenCollapsible(False)
         self._top_splitter.addWidget(self.raw_canvas)
@@ -1673,15 +2134,32 @@ class ReviewerMainWindow(QMainWindow):
         w = self._main_splitter.width()
         if w <= 10:
             return
+<<<<<<< Updated upstream
         left_w = int(w * 0.70)
+=======
+        left_w = int(w * 0.72)
+>>>>>>> Stashed changes
         self._main_splitter.setSizes([left_w, w - left_w])
         h = self._v_splitter.height()
         if h > 10:
             self._v_splitter.setSizes([h // 2, h // 2])
+<<<<<<< Updated upstream
         top_w = max(1, self._top_splitter.width())
         bot_w = max(1, self._bot_splitter.width())
         self._top_splitter.setSizes([top_w // 2, top_w - (top_w // 2)])
         self._bot_splitter.setSizes([bot_w // 2, bot_w - (bot_w // 2)])
+=======
+        # Set stretch factors on image canvases so the splitter divider can be
+        # dragged freely to any position (not locked to equal halves)
+        top_w = max(1, self._top_splitter.width())
+        self._top_splitter.setSizes([top_w // 2, top_w - top_w // 2])
+        self._top_splitter.setStretchFactor(0, 1)
+        self._top_splitter.setStretchFactor(1, 1)
+        bot_w = max(1, self._bot_splitter.width())
+        self._bot_splitter.setSizes([bot_w // 2, bot_w - bot_w // 2])
+        self._bot_splitter.setStretchFactor(0, 1)
+        self._bot_splitter.setStretchFactor(1, 1)
+>>>>>>> Stashed changes
     # ── info panel (scrollable) ───────────────────────────────────────────────
     def _build_info_scroll(self) -> QScrollArea:
         scroll = QScrollArea()
@@ -1695,6 +2173,7 @@ class ReviewerMainWindow(QMainWindow):
         panel = QWidget()
         panel.setStyleSheet(f"QWidget {{ background: {_C_PANEL}; }}")
         lay = QVBoxLayout(panel)
+<<<<<<< Updated upstream
         lay.setContentsMargins(14, 14, 14, 14)
         lay.setSpacing(12)
 
@@ -1713,6 +2192,26 @@ class ReviewerMainWindow(QMainWindow):
         self.orient_label.setStyleSheet(f"color:{_C_DIM}; font-size:11pt;")
         self.spacing_label = QLabel("Spacing: -")
         self.spacing_label.setStyleSheet(f"color:{_C_DIM}; font-size:11pt;")
+=======
+        lay.setContentsMargins(_PANEL_MARGIN, _PANEL_MARGIN, _PANEL_MARGIN, _PANEL_MARGIN)
+        lay.setSpacing(_PANEL_SPACING)
+
+        # ── Case info ──────────────────────────────────────────────────────
+        gb = QGroupBox("Case")
+        vl = QVBoxLayout(gb); vl.setSpacing(4)
+        self.case_label = QLabel("-")
+        self.case_label.setStyleSheet(
+            f"font-family: Consolas, Menlo, monospace; font-weight:700;"
+            f" font-size:{'13' if _IS_WINDOWS else str(_BASE_PT+4)}pt; color:{_C_ACCENT};")
+        self.status_label = QLabel("Status: unsaved")
+        self.status_label.setStyleSheet(f"font-size:{_BASE_PT}pt;")
+        self.source_label = QLabel("Sources: -")
+        self.source_label.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+        self.orient_label = QLabel("Native: -")
+        self.orient_label.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+        self.spacing_label = QLabel("Spacing: -")
+        self.spacing_label.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+>>>>>>> Stashed changes
         for w in (self.case_label, self.status_label,
                   self.source_label, self.orient_label, self.spacing_label):
             vl.addWidget(w)
@@ -1720,7 +2219,11 @@ class ReviewerMainWindow(QMainWindow):
 
         # ── Overlay toggles ───────────────────────────────────────────────
         ob = QGroupBox("Overlay")
+<<<<<<< Updated upstream
         ol = QVBoxLayout(ob); ol.setSpacing(8)
+=======
+        ol = QVBoxLayout(ob); ol.setSpacing(6)
+>>>>>>> Stashed changes
         self.cort_seg_cb = QCheckBox("Cortical labels (SynthSeg ROIs)")
         self.cort_seg_cb.setChecked(DEFAULT_CORT_SEG_VISIBLE)
         self.sub_seg_cb  = QCheckBox("Subcortical labels")
@@ -1741,7 +2244,11 @@ class ReviewerMainWindow(QMainWindow):
             "N / P       Next / Prev case (auto-save)\n"
             "Ctrl+S      Save")
         hotkey_lbl.setStyleSheet(
+<<<<<<< Updated upstream
             f"font-family: Consolas, Menlo, monospace; font-size:11pt; color:{_C_DIM};")
+=======
+            f"font-family: Consolas, Menlo, monospace; font-size:{_SMALL_PT}pt; color:{_C_DIM};")
+>>>>>>> Stashed changes
         hotkey_lbl.setWordWrap(False)
         hl.addWidget(hotkey_lbl)
         lay.addWidget(hb)
@@ -1754,6 +2261,7 @@ class ReviewerMainWindow(QMainWindow):
             lambda v: self._update_seg_visibility("subcortical", v))
         return panel
     # ── QC panel ──────────────────────────────────────────────────────────────
+<<<<<<< Updated upstream
     def _build_qc_panel(self) -> QWidget:
         panel = QWidget()
         panel.setStyleSheet(f"QWidget {{ background: {_C_PANEL}; }}")
@@ -1774,6 +2282,168 @@ class ReviewerMainWindow(QMainWindow):
         cortex_row.setSpacing(3)
         cortex_row_lbl = QLabel("Cortex:")
         cortex_row_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:10pt;")
+=======
+    # def _build_qc_panel(self) -> QWidget:
+    #     panel = QWidget()
+    #     panel.setStyleSheet(f"QWidget {{ background: {_C_PANEL}; }}")
+    #     panel.setMinimumWidth(260)
+
+    #     cl = QVBoxLayout(panel)
+    #     if _IS_WINDOWS:
+    #         cl.setContentsMargins(5, 12, 12, 12)
+    #         cl.setSpacing(10)
+    #     else:
+    #         fm = panel.fontMetrics()
+    #         _sp  = max(2, fm.height() // 3)
+    #         _isp = max(1, fm.height() // 5)
+    #         _mg  = max(4, fm.height() // 2)
+    #         cl.setContentsMargins(_mg, _mg, _mg, _mg)
+    #         cl.setSpacing(_sp)
+
+    #     # ── Motion QC Scores ──────────────────────────────────────────────
+    #     sg = QGroupBox("Motion QC Scores")
+    #     if _IS_WINDOWS:
+    #         sf = QFormLayout(sg); sf.setSpacing(8)
+    #         self.cortex_combo = _make_combo(MOTION_SCORES, placeholder="")
+    #         self.subcortex_combo = _make_combo(MOTION_SCORES, placeholder="")
+    #         sf.addRow("Cortex:",    self.cortex_combo)
+    #         sf.addRow("Subcortex:", self.subcortex_combo)
+    #     else:
+    #         sv = QVBoxLayout(sg)
+    #         sv.setSpacing(_sp)
+    #         cortex_row = QVBoxLayout(); cortex_row.setSpacing(_isp)
+    #         cortex_row_lbl = QLabel("Cortex:")
+    #         cortex_row_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+    #         self.cortex_combo = _make_combo(MOTION_SCORES, placeholder="")
+    #         cortex_row.addWidget(cortex_row_lbl)
+    #         cortex_row.addWidget(self.cortex_combo)
+    #         sv.addLayout(cortex_row)
+    #         subcortex_row = QVBoxLayout(); subcortex_row.setSpacing(_isp)
+    #         subcortex_row_lbl = QLabel("Subcortex:")
+    #         subcortex_row_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+    #         self.subcortex_combo = _make_combo(MOTION_SCORES, placeholder="")
+    #         subcortex_row.addWidget(subcortex_row_lbl)
+    #         subcortex_row.addWidget(self.subcortex_combo)
+    #         sv.addLayout(subcortex_row)
+    #     cl.addWidget(sg)
+
+    #     # ── Segmentation Accuracy ─────────────────────────────────────────
+    #     LABEL_ACCURACY = ["0 – Good", "1 – Bad"]
+    #     lag = QGroupBox("Segmentation Accuracy  (optional)")
+    #     if _IS_WINDOWS:
+    #         laf = QFormLayout(lag); laf.setSpacing(8)
+    #         self.cort_label_combo = _make_combo(LABEL_ACCURACY, placeholder="")
+    #         self.sub_label_combo = _make_combo(LABEL_ACCURACY, placeholder="")
+    #         laf.addRow("Cortical:",    self.cort_label_combo)
+    #         laf.addRow("Subcortical:", self.sub_label_combo)
+    #     else:
+    #         lv2 = QVBoxLayout(lag); lv2.setSpacing(_sp)
+    #         cort_la_row = QVBoxLayout(); cort_la_row.setSpacing(_isp)
+    #         cort_la_lbl = QLabel("Cortical:")
+    #         cort_la_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+    #         self.cort_label_combo = _make_combo(LABEL_ACCURACY, placeholder="")
+    #         cort_la_row.addWidget(cort_la_lbl)
+    #         cort_la_row.addWidget(self.cort_label_combo)
+    #         lv2.addLayout(cort_la_row)
+    #         sub_la_row = QVBoxLayout(); sub_la_row.setSpacing(_isp)
+    #         sub_la_lbl = QLabel("Subcortical:")
+    #         sub_la_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+    #         self.sub_label_combo = _make_combo(LABEL_ACCURACY, placeholder="")
+    #         sub_la_row.addWidget(sub_la_lbl)
+    #         sub_la_row.addWidget(self.sub_label_combo)
+    #         lv2.addLayout(sub_la_row)
+    #     cl.addWidget(lag)
+    #     # Notes
+    #     ng = QGroupBox("Notes")
+    #     nl = QVBoxLayout(ng)
+    #     self.notes_edit = QTextEdit()
+    #     self.notes_edit.setPlaceholderText("Optional notes…")
+    #     self.notes_edit.setMinimumHeight(_NOTES_MIN_H)
+    #     self.notes_edit.setMaximumHeight(_NOTES_MAX_H)
+    #     nl.addWidget(self.notes_edit)
+    #     cl.addWidget(ng)
+    #     # Review flag
+    #     fg = QGroupBox("Review")
+    #     fl = QVBoxLayout(fg)
+    #     self.review_flag_cb = QCheckBox("Flag this case for later review")
+    #     fl.addWidget(self.review_flag_cb)
+    #     cl.addWidget(fg)
+    #     # Save
+    #     self._btn_save = QPushButton("💾   Save   (Ctrl+S)")
+    #     self._btn_save.setStyleSheet(_SAVE_BTN_CSS)
+    #     self._btn_save.clicked.connect(self.save_current_case)
+    #     cl.addWidget(self._btn_save)
+    #     # Navigation
+    #     nav = QGroupBox("Navigation")
+    #     nl2 = QHBoxLayout(nav); nl2.setSpacing(8)
+    #     self.btn_prev = QPushButton("◀  Prev")
+    #     self.btn_next = QPushButton("Next  ▶")
+    #     for b in (self.btn_prev, self.btn_next):
+    #         b.setStyleSheet(_NAV_BTN_CSS)
+    #     self.btn_prev.clicked.connect(self.prev_case)
+    #     self.btn_next.clicked.connect(self.next_case)
+    #     nl2.addWidget(self.btn_prev)
+    #     nl2.addWidget(self.btn_next)
+    #     cl.addWidget(nav)
+    #     # Case list
+    #     lg = QGroupBox("Case List")
+    #     ll2 = QVBoxLayout(lg)
+    #     self.case_list = QListWidget()
+    #     self._case_items: Dict[str, QListWidgetItem] = {}
+    #     for c in self.cases:
+    #         item = QListWidgetItem(c.case_id)
+    #         item.setData(Qt.UserRole, c.case_id)
+    #         self.case_list.addItem(item)
+    #         self._case_items[c.case_id] = item
+    #     self.case_list.setMinimumHeight(_CASELIST_MIN_H)
+    #     self.case_list.itemClicked.connect(self.on_case_clicked)
+    #     ll2.addWidget(self.case_list)
+    #     cl.addWidget(lg, 1)
+    #     self.cortex_combo.currentTextChanged.connect(self._mark_unsaved)
+    #     self.subcortex_combo.currentTextChanged.connect(self._mark_unsaved)
+    #     self.cortex_combo.currentTextChanged.connect(lambda _: self._clear_qc_error_if_filled(self.cortex_combo))
+    #     self.subcortex_combo.currentTextChanged.connect(lambda _: self._clear_qc_error_if_filled(self.subcortex_combo))
+    #     self.cort_label_combo.currentTextChanged.connect(self._mark_unsaved)
+    #     self.sub_label_combo.currentTextChanged.connect(self._mark_unsaved)
+    #     self.notes_edit.textChanged.connect(self._mark_unsaved)
+    #     self.review_flag_cb.toggled.connect(self._mark_unsaved)
+    #     self.cortex_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+    #     self.subcortex_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+    #     self.cort_label_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+    #     self.sub_label_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+    #     self.notes_edit.textChanged.connect(self._refresh_current_case_list_item)
+    #     self.review_flag_cb.toggled.connect(lambda _: self._refresh_current_case_list_item())
+    #     return panel
+    def _build_qc_panel(self) -> QWidget:
+        panel = QWidget()
+        panel.setStyleSheet(f"QWidget {{ background: {_C_PANEL}; }}")
+        panel.setMinimumWidth(260)
+
+        # 强制写死极其紧凑的间距，不再依赖原生的多余 padding
+        _sp  = 4   # 各个 GroupBox 之间的垂直间距
+        _isp = 2   # Label 和下拉框之间的微小间距
+        _mg  = 4   # 整个面板靠边缘的留白
+        
+        # 统一的紧凑型 GroupBox 内部边距 (左, 上, 右, 下)
+        # 上边距(12)是专门为了不遮挡标题文字预留的，其余压紧到极限
+        _gb_margins = (6, 12, 6, 6)
+
+        cl = QVBoxLayout(panel)
+        cl.setContentsMargins(_mg, _mg, _mg, _mg)
+        cl.setSpacing(_sp)
+
+        # ── Motion QC Scores ──────────────────────────────────────────────
+        sg = QGroupBox("Motion QC Scores")
+        sv = QVBoxLayout(sg)
+        sv.setContentsMargins(*_gb_margins) # 注入强力紧凑边距
+        sv.setSpacing(_sp)
+
+        # Cortex row
+        cortex_row = QVBoxLayout()
+        cortex_row.setSpacing(_isp)
+        cortex_row_lbl = QLabel("Cortex:")
+        cortex_row_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+>>>>>>> Stashed changes
         self.cortex_combo = _make_combo(MOTION_SCORES, placeholder="")
         cortex_row.addWidget(cortex_row_lbl)
         cortex_row.addWidget(self.cortex_combo)
@@ -1781,15 +2451,22 @@ class ReviewerMainWindow(QMainWindow):
 
         # Subcortex row
         subcortex_row = QVBoxLayout()
+<<<<<<< Updated upstream
         subcortex_row.setSpacing(3)
         subcortex_row_lbl = QLabel("Subcortex:")
         subcortex_row_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:10pt;")
+=======
+        subcortex_row.setSpacing(_isp)
+        subcortex_row_lbl = QLabel("Subcortex:")
+        subcortex_row_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+>>>>>>> Stashed changes
         self.subcortex_combo = _make_combo(MOTION_SCORES, placeholder="")
         subcortex_row.addWidget(subcortex_row_lbl)
         subcortex_row.addWidget(self.subcortex_combo)
         sv.addLayout(subcortex_row)
         cl.addWidget(sg)
 
+<<<<<<< Updated upstream
         # ── Segmentation Accuracy ─────────────────────────────────────────
         LABEL_ACCURACY = ["0 – Good", "1 – Bad"]
         lag = QGroupBox("Segmentation Accuracy  (optional)")
@@ -1837,6 +2514,78 @@ class ReviewerMainWindow(QMainWindow):
         # Navigation
         nav = QGroupBox("Navigation")
         nl2 = QHBoxLayout(nav); nl2.setSpacing(8)
+=======
+        # # ── Segmentation Accuracy ─────────────────────────────────────────
+        if SEGMENTATION_TASK == True:
+            LABEL_ACCURACY = ["0 – Good", "1 – Bad"]
+            lag = QGroupBox("Segmentation Accuracy  (optional)")
+            lv2 = QVBoxLayout(lag)
+            lv2.setContentsMargins(*_gb_margins) # 注入强力紧凑边距
+            lv2.setSpacing(_sp)
+
+            cort_la_row = QVBoxLayout()
+            cort_la_row.setSpacing(_isp)
+            cort_la_lbl = QLabel("Cortical:")
+            cort_la_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+            self.cort_label_combo = _make_combo(LABEL_ACCURACY, placeholder="")
+            cort_la_row.addWidget(cort_la_lbl)
+            cort_la_row.addWidget(self.cort_label_combo)
+            lv2.addLayout(cort_la_row)
+
+            sub_la_row = QVBoxLayout()
+            sub_la_row.setSpacing(_isp)
+            sub_la_lbl = QLabel("Subcortical:")
+            sub_la_lbl.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+            self.sub_label_combo = _make_combo(LABEL_ACCURACY, placeholder="")
+            sub_la_row.addWidget(sub_la_lbl)
+            sub_la_row.addWidget(self.sub_label_combo)
+            lv2.addLayout(sub_la_row)
+            cl.addWidget(lag)
+        
+        # ── Notes ─────────────────────────────────────────────────────────
+        ng = QGroupBox("Notes")
+        nl = QVBoxLayout(ng)
+        nl.setContentsMargins(*_gb_margins) # 注入强力紧凑边距
+        self.notes_edit = QTextEdit()
+        self.notes_edit.setPlaceholderText("Optional notes…")
+        self.notes_edit.setMinimumHeight(_NOTES_MIN_H)
+        self.notes_edit.setMaximumHeight(_NOTES_MAX_H)
+        nl.addWidget(self.notes_edit)
+        cl.addWidget(ng)
+        
+        # ── Review & Save (50/50 并排) ────────────────────────────────────
+        rs_layout = QHBoxLayout()
+        rs_layout.setSpacing(8)
+        
+        # 左侧 50%：独立的 Review 边框
+        fg = QGroupBox("Review")
+        fl = QVBoxLayout(fg)
+        fl.setContentsMargins(*_gb_margins)
+        self.review_flag_cb = QCheckBox("Flag for review")
+        self.review_flag_cb.setToolTip("Flag this case for later review")
+        fl.addWidget(self.review_flag_cb)
+        rs_layout.addWidget(fg, 1)  
+        
+        # 右侧 50%：Save 按钮
+        # 核心：套一层垂直布局，顶部向下推一个刚好等于标题预留高度的边距
+        btn_layout = QVBoxLayout()
+        btn_layout.setContentsMargins(0, _GB_MARGIN_TOP, 0, 0) 
+        
+        self._btn_save = QPushButton("💾   Save   (Ctrl+S)")
+        self._btn_save.setStyleSheet(_SAVE_BTN_CSS)
+        self._btn_save.clicked.connect(self.save_current_case)
+        self._btn_save.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
+        
+        btn_layout.addWidget(self._btn_save)
+        rs_layout.addLayout(btn_layout, 1) # 将包含边距的布局加入到这一行中
+        cl.addLayout(rs_layout)
+        
+        # ── Navigation ────────────────────────────────────────────────────
+        nav = QGroupBox("Navigation")
+        nl2 = QHBoxLayout(nav)
+        nl2.setContentsMargins(*_gb_margins) # 注入强力紧凑边距
+        nl2.setSpacing(6)
+>>>>>>> Stashed changes
         self.btn_prev = QPushButton("◀  Prev")
         self.btn_next = QPushButton("Next  ▶")
         for b in (self.btn_prev, self.btn_next):
@@ -1846,9 +2595,17 @@ class ReviewerMainWindow(QMainWindow):
         nl2.addWidget(self.btn_prev)
         nl2.addWidget(self.btn_next)
         cl.addWidget(nav)
+<<<<<<< Updated upstream
         # Case list
         lg = QGroupBox("Case List")
         ll2 = QVBoxLayout(lg)
+=======
+        
+        # ── Case list ─────────────────────────────────────────────────────
+        lg = QGroupBox("Case List")
+        ll2 = QVBoxLayout(lg)
+        ll2.setContentsMargins(6, 12, 6, 6) # 注入强力紧凑边距
+>>>>>>> Stashed changes
         self.case_list = QListWidget()
         self._case_items: Dict[str, QListWidgetItem] = {}
         for c in self.cases:
@@ -1856,24 +2613,48 @@ class ReviewerMainWindow(QMainWindow):
             item.setData(Qt.UserRole, c.case_id)
             self.case_list.addItem(item)
             self._case_items[c.case_id] = item
+<<<<<<< Updated upstream
         self.case_list.setMinimumHeight(180)
         self.case_list.itemClicked.connect(self.on_case_clicked)
         ll2.addWidget(self.case_list)
         cl.addWidget(lg, 1)
+=======
+        self.case_list.setMinimumHeight(_CASELIST_MIN_H)
+        self.case_list.itemClicked.connect(self.on_case_clicked)
+        ll2.addWidget(self.case_list)
+        cl.addWidget(lg, 1)
+        
+        # --- Signal connections ---
+>>>>>>> Stashed changes
         self.cortex_combo.currentTextChanged.connect(self._mark_unsaved)
         self.subcortex_combo.currentTextChanged.connect(self._mark_unsaved)
         self.cortex_combo.currentTextChanged.connect(lambda _: self._clear_qc_error_if_filled(self.cortex_combo))
         self.subcortex_combo.currentTextChanged.connect(lambda _: self._clear_qc_error_if_filled(self.subcortex_combo))
+<<<<<<< Updated upstream
         self.cort_label_combo.currentTextChanged.connect(self._mark_unsaved)
         self.sub_label_combo.currentTextChanged.connect(self._mark_unsaved)
+=======
+        if SEGMENTATION_TASK == True:
+            self.cort_label_combo.currentTextChanged.connect(self._mark_unsaved)
+            self.sub_label_combo.currentTextChanged.connect(self._mark_unsaved)
+>>>>>>> Stashed changes
         self.notes_edit.textChanged.connect(self._mark_unsaved)
         self.review_flag_cb.toggled.connect(self._mark_unsaved)
         self.cortex_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
         self.subcortex_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+<<<<<<< Updated upstream
         self.cort_label_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
         self.sub_label_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
         self.notes_edit.textChanged.connect(self._refresh_current_case_list_item)
         self.review_flag_cb.toggled.connect(lambda _: self._refresh_current_case_list_item())
+=======
+        if SEGMENTATION_TASK == True:
+            self.cort_label_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+            self.sub_label_combo.currentTextChanged.connect(lambda _: self._refresh_current_case_list_item())
+        self.notes_edit.textChanged.connect(self._refresh_current_case_list_item)
+        self.review_flag_cb.toggled.connect(lambda _: self._refresh_current_case_list_item())
+        
+>>>>>>> Stashed changes
         return panel
     # ── wheel filters ─────────────────────────────────────────────────────────
     def _install_wheel_filters(self):
@@ -2067,7 +2848,11 @@ class ReviewerMainWindow(QMainWindow):
     def _mark_unsaved(self, *_):
         self.current_saved = False
         self.status_label.setText("Status:  ✏ unsaved")
+<<<<<<< Updated upstream
         self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:12pt;")
+=======
+        self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:{_BASE_PT}pt;")
+>>>>>>> Stashed changes
     def _update_seg_visibility(self, which, checked):
         if which == "cortical":
             if self.seg_cortical_layer:
@@ -2114,8 +2899,13 @@ class ReviewerMainWindow(QMainWindow):
             case_id=self.current_case_id(),
             cortex_score=self._label_to_score(self.cortex_combo.currentText()),
             subcortex_score=self._label_to_score(self.subcortex_combo.currentText()),
+<<<<<<< Updated upstream
             cort_label_ok=_la(self.cort_label_combo),
             sub_label_ok=_la(self.sub_label_combo),
+=======
+            cort_label_ok=_la(self.cort_label_combo) if SEGMENTATION_TASK == True else "",
+            sub_label_ok=_la(self.sub_label_combo) if SEGMENTATION_TASK == True else "",
+>>>>>>> Stashed changes
             notes=self.notes_edit.toPlainText().strip(),
             marked_for_review=("1" if self.review_flag_cb.isChecked() else ""))
     @staticmethod
@@ -2168,7 +2958,11 @@ class ReviewerMainWindow(QMainWindow):
         self._refresh_case_list_item(rec.case_id, rec)
         self.current_saved = True
         self.status_label.setText("Status:  ✔ saved")
+<<<<<<< Updated upstream
         self.status_label.setStyleSheet(f"color:{_C_SUCCESS}; font-size:12pt;")
+=======
+        self.status_label.setStyleSheet(f"color:{_C_SUCCESS}; font-size:{_BASE_PT}pt;")
+>>>>>>> Stashed changes
     def next_case(self):
         if not self.cases or self.case_index >= len(self.cases) - 1 or self._is_loading(): return
         if not self._validate_motion_scores_before_leave():
@@ -2382,9 +3176,19 @@ class ReviewerMainWindow(QMainWindow):
         self._fit_all(force=True)
         case = self.cases[self.case_index]
         rec = self.results.get(case.case_id, QCRecord(case_id=case.case_id))
+<<<<<<< Updated upstream
         for w in (self.cortex_combo, self.subcortex_combo,
                   self.cort_label_combo, self.sub_label_combo, self.notes_edit, self.review_flag_cb):
             w.blockSignals(True)
+=======
+        if SEGMENTATION_TASK == True:
+            for w in (self.cortex_combo, self.subcortex_combo,
+                    self.cort_label_combo, self.sub_label_combo, self.notes_edit, self.review_flag_cb):
+                w.blockSignals(True)
+        else:
+            for w in (self.cortex_combo, self.subcortex_combo, self.notes_edit, self.review_flag_cb):
+                w.blockSignals(True)
+>>>>>>> Stashed changes
         self.cortex_combo.setCurrentText(self._score_to_label(rec.cortex_score))
         self.subcortex_combo.setCurrentText(self._score_to_label(rec.subcortex_score))
         self._set_qc_field_error(self.cortex_combo, False)
@@ -2395,6 +3199,7 @@ class ReviewerMainWindow(QMainWindow):
                     combo.setCurrentIndex(i)
                     return
             combo.setCurrentIndex(0)
+<<<<<<< Updated upstream
         _restore_label_combo(self.cort_label_combo, rec.cort_label_ok)
         _restore_label_combo(self.sub_label_combo, rec.sub_label_ok)
         self.notes_edit.setPlainText(rec.notes)
@@ -2402,14 +3207,35 @@ class ReviewerMainWindow(QMainWindow):
         for w in (self.cortex_combo, self.subcortex_combo,
                   self.cort_label_combo, self.sub_label_combo, self.notes_edit, self.review_flag_cb):
             w.blockSignals(False)
+=======
+        if SEGMENTATION_TASK == True:
+            _restore_label_combo(self.cort_label_combo, rec.cort_label_ok)
+            _restore_label_combo(self.sub_label_combo, rec.sub_label_ok)
+        self.notes_edit.setPlainText(rec.notes)
+        self.review_flag_cb.setChecked(bool(rec.marked_for_review))
+        if SEGMENTATION_TASK == True:
+            for w in (self.cortex_combo, self.subcortex_combo,
+                        self.cort_label_combo, self.sub_label_combo, self.notes_edit, self.review_flag_cb):
+                    w.blockSignals(False)
+            else:
+                for w in (self.cortex_combo, self.subcortex_combo, self.notes_edit, self.review_flag_cb):
+                    w.blockSignals(False)
+>>>>>>> Stashed changes
         saved = case.case_id in self.results
         self.case_label.setText(case.case_id)
         if saved:
             self.status_label.setText("Status:  ✔ saved")
+<<<<<<< Updated upstream
             self.status_label.setStyleSheet(f"color:{_C_SUCCESS}; font-size:12pt;")
         else:
             self.status_label.setText("Status:  ✏ unsaved")
             self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:12pt;")
+=======
+            self.status_label.setStyleSheet(f"color:{_C_SUCCESS}; font-size:{_BASE_PT}pt;")
+        else:
+            self.status_label.setText("Status:  ✏ unsaved")
+            self.status_label.setStyleSheet(f"color:{_C_WARN}; font-size:{_BASE_PT}pt;")
+>>>>>>> Stashed changes
         self._cortical_roi_source_ok = bool(data['cort_roi_ok'])
         self._cortical_cube_source_ok = bool(data['cort_cube_ok'])
         self._subcortical_source_ok = bool(data['sub_ok'])
@@ -2527,6 +3353,14 @@ class ReviewerMainWindow(QMainWindow):
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
 def main():
+<<<<<<< Updated upstream
+=======
+    # High-DPI support — must be set BEFORE QApplication is created.
+    # On Windows with 125 %/150 % display scaling these prevent clipping
+    # of menu checkmarks, text, and other fixed-size UI elements.
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps,   True)
+>>>>>>> Stashed changes
     # OpenGL setup — must come BEFORE QApplication is created
     QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
     if not _IS_MACOS:
@@ -2537,10 +3371,16 @@ def main():
 
     # Platform-appropriate base font
     if _IS_MACOS:
+<<<<<<< Updated upstream
         app.setFont(QFont("Helvetica Neue", 13))
     else:
         app.setFont(QFont("Segoe UI", 11))
 
+=======
+        app.setFont(QFont("Helvetica Neue", _BASE_PT))
+    else:
+        app.setFont(QFont("Segoe UI", _BASE_PT))
+>>>>>>> Stashed changes
     app.setStyleSheet(_GLOBAL_CSS)
     app.setWindowIcon(_make_app_icon())
     setup = StartupConfigDialog(
@@ -2562,4 +3402,8 @@ def main():
     QTimer.singleShot(0, lambda: win.start_case_scan(config.cases_root))
     sys.exit(app.exec_())
 if __name__ == "__main__":
+<<<<<<< Updated upstream
     main()
+=======
+    main()
+>>>>>>> Stashed changes
