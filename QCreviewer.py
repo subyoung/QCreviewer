@@ -1,6 +1,6 @@
 """
-QSM QC Reviewer v19
-New features: Floating labels for cortical/subcortical segmentation label descriptions
+QSM QC Reviewer v20
+New features: Floating labels for imaging directions
 =====================
 A napari-based viewer for quality control of QSM processing results, designed to be used in conjunction with the UK Biobank QSM pipeline.  This viewer is intended
 to be used by trained human raters to visually assess the quality of QSM outputs and assign categorical quality scores, which can then be exported in a CSV file for downstream analysis.  The viewer provides a multi-panel layout with linked navigation, allowing users to easily compare different image contrasts and segmentations for each case.  The UI includes options for adjusting brightness/contrast, toggling segmentation overlays, and adding free-form notes for each case.  The viewer is built using the napari framework for fast multi-dimensional image visualization, and PyQt for the UI components.  It is designed to be flexible and extensible, allowing for future additions such as new QC criteria or support for additional file formats.
@@ -172,7 +172,7 @@ _AUTO_FLIP: Dict[Tuple[str, str], Tuple[bool, bool]] = {
     ("LPI (ITK-SNAP)", "Axial"):    (False, False),
     ("LPI (ITK-SNAP)", "Coronal"):  (False, False),
     ("LPI (ITK-SNAP)", "Sagittal"): (False, False),
-    ("RAS",            "Axial"):    (False, True),
+    ("RAS",            "Axial"):    (True,  True),
     ("RAS",            "Coronal"):  (True,  True),
     ("RAS",            "Sagittal"): (True,  True),
     ("Native",         "Axial"):    (False, False),
@@ -1169,21 +1169,10 @@ class ImageCanvas(QWidget):
         # Store combo height bounds for set_title_right_widget
         self._hdr_combo_min = _COMBO_MIN
         self._hdr_combo_max = _COMBO_MAX
-        # direction bar
-        dir_bar = QWidget()
-        dir_bar.setStyleSheet(f"background:{_C_DIR_BAR};")
-        dir_bar.setFixedHeight(_DIR_H)
-        dl = QHBoxLayout(dir_bar)
-        dl.setContentsMargins(6, 0, 6, 0); dl.setSpacing(0)
-        self._lbl_left  = QLabel("← ?"); self._lbl_left.setStyleSheet(_DIR_CSS)
-        self._lbl_mid   = QLabel("↑?  ↓?"); self._lbl_mid.setStyleSheet(_DIR_CSS)
-        self._lbl_right = QLabel("? →"); self._lbl_right.setStyleSheet(_DIR_CSS)
-        self._lbl_left.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-        self._lbl_mid.setAlignment(Qt.AlignVCenter | Qt.AlignCenter)
-        self._lbl_right.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        dl.addWidget(self._lbl_left, 1)
-        dl.addWidget(self._lbl_mid,  1)
-        dl.addWidget(self._lbl_right,1)
+        self._dir_bar = QWidget()
+        self._dir_bar.setStyleSheet(f"background:{_C_DIR_BAR};")
+        self._dir_bar.setFixedHeight(0)
+        self._dir_bar.hide()
         # napari viewer
         self.viewer_model = ViewerModel(title=title)
         self.qt_viewer    = QtViewer(self.viewer_model)
@@ -1204,7 +1193,6 @@ class ImageCanvas(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(hdr)
-        lay.addWidget(dir_bar)
         lay.addWidget(self.qt_viewer, 1)
 
         self.viewer_model.layers.selection.events.active.connect(
@@ -1222,6 +1210,21 @@ class ImageCanvas(QWidget):
         )
         self._hover_info_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._hover_info_label.hide()
+
+        self._dir_overlay_visible = True
+        self._dir_overlay_labels = {}
+        dir_style = (
+            f"background: transparent; color: #f2b000; border: none; "
+            f"font-size:{_DIR_PT}pt; font-weight:600; padding:0px;"
+        )
+        for key in ("left", "right", "top", "bottom"):
+            lbl = QLabel(self._hover_overlay_parent)
+            lbl.setStyleSheet(dir_style)
+            lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.hide()
+            self._dir_overlay_labels[key] = lbl
+
         self._hover_sources = []
         self._hover_event_source = self._canvas_native or self.qt_viewer
         if self._hover_event_source is not None:
@@ -1232,6 +1235,7 @@ class ImageCanvas(QWidget):
             self._hover_event_source.installEventFilter(self)
         self.qt_viewer.installEventFilter(self)
         self._reposition_hover_info_label()
+        self._update_direction_overlay_visibility()
     def _find_native(self):
         for attr in ("canvas", "_canvas", "native"):
             obj = getattr(self.qt_viewer, attr, None)
@@ -1379,6 +1383,20 @@ class ImageCanvas(QWidget):
             self._hover_info_label.clear()
             self._hover_info_label.hide()
 
+    def set_direction_overlay_visible(self, visible: bool):
+        self._dir_overlay_visible = bool(visible)
+        self._update_direction_overlay_visibility()
+
+    def _update_direction_overlay_visibility(self):
+        labels = getattr(self, '_dir_overlay_labels', None) or {}
+        for lbl in labels.values():
+            if self._dir_overlay_visible and bool(lbl.text()):
+                lbl.show()
+                lbl.raise_()
+            else:
+                lbl.hide()
+        self._reposition_direction_overlay_labels()
+
     def _reposition_hover_info_label(self):
         lbl = getattr(self, '_hover_info_label', None)
         if lbl is None:
@@ -1396,6 +1414,46 @@ class ImageCanvas(QWidget):
         y = max(margin, ph - lbl.height() - margin)
         lbl.move(x, y)
         lbl.raise_()
+        self._reposition_direction_overlay_labels()
+
+    def _reposition_direction_overlay_labels(self):
+        labels = getattr(self, '_dir_overlay_labels', None) or {}
+        if not labels:
+            return
+        parent = getattr(self, '_hover_overlay_parent', None) or self.qt_viewer
+        pw = max(0, parent.width())
+        ph = max(0, parent.height())
+        if pw <= 0 or ph <= 0:
+            return
+        edge_margin = 3 if _IS_WINDOWS else 12
+        center_x = pw // 2
+        center_y = ph // 2
+        positions = {
+            'left': (edge_margin, center_y),
+            'right': (pw - edge_margin, center_y),
+            'top': (center_x, edge_margin),
+            'bottom': (center_x, ph - edge_margin),
+        }
+        for key, lbl in labels.items():
+            try:
+                lbl.adjustSize()
+            except Exception:
+                pass
+            x, y = positions[key]
+            if key == 'left':
+                px = x
+                py = y - lbl.height() // 2
+            elif key == 'right':
+                px = x - lbl.width()
+                py = y - lbl.height() // 2
+            elif key == 'top':
+                px = x - lbl.width() // 2
+                py = y
+            else:
+                px = x - lbl.width() // 2
+                py = y - lbl.height()
+            lbl.move(max(0, px), max(0, py))
+            lbl.raise_()
 
     def _hover_source_enabled(self, src) -> bool:
         layer = src.get('layer')
@@ -1602,9 +1660,21 @@ class ImageCanvas(QWidget):
         idx = max(0, min(idx + step, len(ZOOM_PRESETS) - 1))
         self.set_zoom_mode(ZOOM_PRESETS[idx] / 100.0, apply=apply)
     def set_direction_labels(self, left, right, top, bottom):
-        self._lbl_left.setText(f"← {left}")
-        self._lbl_right.setText(f"{right} →")
-        self._lbl_mid.setText(f"↑ {top}   ↓ {bottom}")
+        mapping = {
+            'left': str(left or '?'),
+            'right': str(right or '?'),
+            'top': str(top or '?'),
+            'bottom': str(bottom or '?'),
+        }
+        for key, text in mapping.items():
+            lbl = self._dir_overlay_labels.get(key)
+            if lbl is not None:
+                lbl.setText(text)
+                try:
+                    lbl.adjustSize()
+                except Exception:
+                    pass
+        self._update_direction_overlay_visibility()
     def install_wheel_filter(self, on_wheel):
         target = self._canvas_native or self.qt_viewer
         self._wheel_filter = WheelScrollFilter(on_wheel, parent=self)
@@ -1912,6 +1982,11 @@ class ReviewerMainWindow(QMainWindow):
         self._act_show_seg_derived.toggled.connect(self._on_show_seg_derived_toggled)
         vm.addAction(self._act_show_seg_derived)
 
+        self._act_show_view_directions = QAction(
+            "Show view directions", self, checkable=True, checked=True)
+        self._act_show_view_directions.toggled.connect(self._on_show_view_directions_toggled)
+        vm.addAction(self._act_show_view_directions)
+
         # ── Canonical (reorientation) sub-menu ────────────────────────────
         vm.addSeparator()
         canonical_menu = vm.addMenu("Canonical orientation")
@@ -1957,6 +2032,13 @@ class ReviewerMainWindow(QMainWindow):
         """Called when a View orientation menu item is triggered."""
         if not self._is_loading():
             self._apply_orientation()
+
+    def _on_show_view_directions_toggled(self, checked: bool):
+        for canvas in self._all_canvases():
+            try:
+                canvas.set_direction_overlay_visible(checked)
+            except Exception:
+                pass
 
     def _current_canonical_key(self) -> str:
         for key, act in self._canonical_actions.items():
@@ -2649,11 +2731,17 @@ class ReviewerMainWindow(QMainWindow):
         else:
             left, right, top, bottom = _VIEW_DIR_LABELS.get(
                 orient_name, ('?','?','?','?'))
+            if fh:
+                left, right = right, left
+            if fv:
+                top, bottom = bottom, top
         for canvas, data in self._canvas_data_pairs():
             if data is None: continue
             canvas.set_view(self._dims_order, self._scroll_axis, data.shape, fv, fh)
             canvas.lock_scroll_mode()
             canvas.set_direction_labels(left, right, top, bottom)
+            if hasattr(self, '_act_show_view_directions'):
+                canvas.set_direction_overlay_visible(self._act_show_view_directions.isChecked())
             canvas.fit_to_shape(data.shape, self._dims_order, self._zooms)
         if force_mid and self.raw_data is not None:
             mid = self.raw_data.shape[self._scroll_axis] // 2
