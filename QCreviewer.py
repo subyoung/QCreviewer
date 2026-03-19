@@ -1,13 +1,19 @@
 """
-QSM QC Reviewer v13
+QSM QC Reviewer v19
+New features: Floating labels for cortical/subcortical segmentation label descriptions
 =====================
-Supports Windows and macOS with a consistent dark-themed UI and identical features.  See the GitHub repo for installation instructions, usage guide, and changelog:
+A napari-based viewer for quality control of QSM processing results, designed to be used in conjunction with the UK Biobank QSM pipeline.  This viewer is intended
+to be used by trained human raters to visually assess the quality of QSM outputs and assign categorical quality scores, which can then be exported in a CSV file for downstream analysis.  The viewer provides a multi-panel layout with linked navigation, allowing users to easily compare different image contrasts and segmentations for each case.  The UI includes options for adjusting brightness/contrast, toggling segmentation overlays, and adding free-form notes for each case.  The viewer is built using the napari framework for fast multi-dimensional image visualization, and PyQt for the UI components.  It is designed to be flexible and extensible, allowing for future additions such as new QC criteria or support for additional file formats.
+
+Ziyang Xu, 2026
 """
 import os
 import sys
 import bisect
 import shutil
 import platform
+import re
+from pathlib import Path
 from dataclasses import dataclass, asdict, fields
 from typing import Callable, Dict, List, Optional, Tuple
 from collections import OrderedDict
@@ -115,6 +121,40 @@ ROI_LABEL_SYNTHSEG_COMBINED = {
 _ALL_CORTICAL_LABELS = sorted(
     {lbl for labels in ROI_LABEL_SYNTHSEG_COMBINED.values() for lbl in labels}
 )
+CORTICAL_LABELS_FILENAME = "cortical_labels.txt"
+SUBCORTICAL_LABELS_FILENAME = "subcortical_labels.txt"
+
+def _label_files_dir() -> Path:
+    return Path(__file__).resolve().parent
+
+def _parse_itksnap_visible_label_file(path: Path) -> Dict[int, str]:
+    mapping: Dict[int, str] = {}
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                m = re.match(r'^(-?\d+)\s+\d+\s+\d+\s+\d+\s+([0-9]*\.?[0-9]+)\s+(\d+)\s+(\d+)\s+"(.*)"\s*$', line)
+                if not m:
+                    continue
+                idx = int(m.group(1))
+                vis = int(m.group(3))
+                label_name = m.group(5).strip()
+                if vis == 1 and idx > 0 and label_name:
+                    mapping[idx] = label_name
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return mapping
+
+def load_hover_label_maps() -> Tuple[Dict[int, str], Dict[int, str]]:
+    root = _label_files_dir()
+    cortical = _parse_itksnap_visible_label_file(root / CORTICAL_LABELS_FILENAME)
+    subcortical = _parse_itksnap_visible_label_file(root / SUBCORTICAL_LABELS_FILENAME)
+    return cortical, subcortical
+
 # ── Orientation tables (unchanged from v9) ────────────────────────────────────
 CANONICAL_OPTIONS: Dict[str, Optional[Tuple[str, str, str]]] = {
     "LPI (ITK-SNAP)": ('L', 'P', 'I'),
@@ -1172,6 +1212,26 @@ class ImageCanvas(QWidget):
         # Connect dims current_step to update our slice label
         self.viewer_model.dims.events.current_step.connect(
             self._on_dims_step_changed)
+        self._hover_overlay_parent = self._canvas_native if self._canvas_native is not None else self.qt_viewer
+        self._hover_info_label = QLabel(self._hover_overlay_parent)
+        self._hover_info_label.setStyleSheet(
+            f"background: rgba(10, 12, 16, 180); color:{_C_TEXT}; "
+            f"border:1px solid {_C_BORDER}; border-radius:4px; "
+            f"padding:{2 if _IS_WINDOWS else 4}px {5 if _IS_WINDOWS else 8}px; "
+            f"font-size:{_SMALL_PT}pt;"
+        )
+        self._hover_info_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._hover_info_label.hide()
+        self._hover_sources = []
+        self._hover_event_source = self._canvas_native or self.qt_viewer
+        if self._hover_event_source is not None:
+            try:
+                self._hover_event_source.setMouseTracking(True)
+            except Exception:
+                pass
+            self._hover_event_source.installEventFilter(self)
+        self.qt_viewer.installEventFilter(self)
+        self._reposition_hover_info_label()
     def _find_native(self):
         for attr in ("canvas", "_canvas", "native"):
             obj = getattr(self.qt_viewer, attr, None)
@@ -1212,6 +1272,7 @@ class ImageCanvas(QWidget):
                     self._slice_info_lbl.setText(f"/ {total}")
             except Exception:
                 pass
+        self.refresh_hover_label()
 
     def _patch_napari_dims_bar(self):
         """
@@ -1283,6 +1344,169 @@ class ImageCanvas(QWidget):
 
         if found_slider:
             self._dims_patched = True
+
+    def set_hover_label_source(self, layer, label_map: Optional[Dict[int, str]],
+                               visibility_getter: Optional[Callable[[], bool]] = None):
+        sources = []
+        if layer is not None and label_map:
+            sources.append({
+                'layer': layer,
+                'label_map': dict(label_map or {}),
+                'visibility_getter': visibility_getter,
+            })
+        self._hover_sources = sources
+        self.clear_hover_info()
+
+    def set_hover_label_sources(self, sources):
+        normalized = []
+        for src in (sources or []):
+            if not isinstance(src, dict):
+                continue
+            layer = src.get('layer')
+            label_map = dict(src.get('label_map') or {})
+            if layer is None or not label_map:
+                continue
+            normalized.append({
+                'layer': layer,
+                'label_map': label_map,
+                'visibility_getter': src.get('visibility_getter'),
+            })
+        self._hover_sources = normalized
+        self.clear_hover_info()
+
+    def clear_hover_info(self):
+        if getattr(self, '_hover_info_label', None) is not None:
+            self._hover_info_label.clear()
+            self._hover_info_label.hide()
+
+    def _reposition_hover_info_label(self):
+        lbl = getattr(self, '_hover_info_label', None)
+        if lbl is None:
+            return
+        margin = 6 if _IS_WINDOWS else 10
+        try:
+            lbl.adjustSize()
+        except Exception:
+            pass
+        parent = getattr(self, '_hover_overlay_parent', None) or self.qt_viewer
+        pw = max(0, parent.width())
+        ph = max(0, parent.height())
+        x = min(margin, max(0, pw - lbl.width() - margin)) if pw else margin
+        x = max(margin, x)
+        y = max(margin, ph - lbl.height() - margin)
+        lbl.move(x, y)
+        lbl.raise_()
+
+    def _hover_source_enabled(self, src) -> bool:
+        layer = src.get('layer')
+        label_map = src.get('label_map') or {}
+        if layer is None or not label_map:
+            return False
+        visibility_getter = src.get('visibility_getter')
+        if visibility_getter is not None:
+            try:
+                if not bool(visibility_getter()):
+                    return False
+            except Exception:
+                return False
+        try:
+            if not bool(getattr(layer, 'visible', False)):
+                return False
+        except Exception:
+            return False
+        return True
+
+    def _sample_hover_label_value(self):
+        sources = getattr(self, '_hover_sources', None) or []
+        if not sources:
+            return None
+        world_pos = getattr(getattr(self.viewer_model, 'cursor', None), 'position', None)
+        if world_pos is None:
+            return None
+        for source in sources:
+            if not self._hover_source_enabled(source):
+                continue
+            layer = source.get('layer')
+            label_map = source.get('label_map') or {}
+            data = getattr(layer, 'data', None)
+            if data is None:
+                continue
+            data_pos = None
+            if hasattr(layer, 'world_to_data'):
+                try:
+                    data_pos = layer.world_to_data(world_pos)
+                except Exception:
+                    data_pos = None
+            if data_pos is None:
+                data_pos = world_pos
+            arr = np.asarray(data_pos, dtype=float).reshape(-1)
+            ndim = int(getattr(data, 'ndim', 0) or 0)
+            if ndim <= 0:
+                continue
+            if arr.size != ndim:
+                current = list(getattr(self.viewer_model.dims, 'current_step', ()) or ())
+                if len(current) < ndim:
+                    current.extend([0] * (ndim - len(current)))
+                for i in range(min(arr.size, ndim)):
+                    current[i] = arr[i]
+                arr = np.asarray(current[:ndim], dtype=float)
+            idx = []
+            shape = tuple(int(v) for v in getattr(data, 'shape', ()))
+            if len(shape) != ndim:
+                continue
+            valid = True
+            for axis, val in enumerate(arr):
+                if not np.isfinite(val):
+                    valid = False
+                    break
+                vox = int(np.floor(float(val) + 1e-6))
+                if vox < 0 or vox >= shape[axis]:
+                    valid = False
+                    break
+                idx.append(vox)
+            if not valid:
+                continue
+            try:
+                label_val = int(data[tuple(idx)])
+            except Exception:
+                continue
+            if label_val <= 0:
+                continue
+            label_name = label_map.get(label_val)
+            if not label_name:
+                continue
+            return label_val, label_name
+        return None
+
+    def refresh_hover_label(self):
+        result = self._sample_hover_label_value()
+        if result is None:
+            self.clear_hover_info()
+            return
+        label_val, label_name = result
+        text = f"{label_val} · {label_name}"
+        if self._hover_info_label.text() != text:
+            self._hover_info_label.setText(text)
+            self._hover_info_label.adjustSize()
+        self._reposition_hover_info_label()
+        self._hover_info_label.show()
+        self._hover_info_label.raise_()
+
+    def eventFilter(self, obj, event):
+        hover_parent = getattr(self, '_hover_overlay_parent', None)
+        if obj in {getattr(self, '_hover_event_source', None), self.qt_viewer, hover_parent}:
+            et = event.type()
+            if et == QEvent.MouseMove:
+                self.refresh_hover_label()
+            elif et in (QEvent.Leave, QEvent.HoverLeave):
+                self.clear_hover_info()
+            elif et == QEvent.Resize:
+                self._reposition_hover_info_label()
+        return super().eventFilter(obj, event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reposition_hover_info_label()
 
     def set_title_right_widget(self, widget: Optional[QWidget]):
         """Insert a widget (e.g. cortical mode combo) into the title bar.
@@ -1387,7 +1611,11 @@ class ImageCanvas(QWidget):
         target.installEventFilter(self._wheel_filter)
     @property
     def viewer(self): return self.viewer_model
-    def clear_layers(self): self.viewer.layers.clear()
+    def clear_layers(self):
+        self.viewer.layers.clear()
+        self.clear_hover_info()
+        self._hover_sources = []
+
     def add_image(self, *a, **kw): return self.viewer.add_image(*a, **kw)
     def add_labels(self, *a, **kw): return self.viewer.add_labels(*a, **kw)
     def lock_scroll_mode(self):
@@ -1405,6 +1633,7 @@ class ImageCanvas(QWidget):
             except Exception: pass
         # Refresh slice label immediately after orientation change
         self._on_dims_step_changed()
+        self.clear_hover_info()
     def fit_to_shape(self, data_shape, dims_order, zooms=None, force: bool = False):
         """Fit camera to ~90 % of canvas, then apply current zoom mode."""
         try:
@@ -1425,6 +1654,7 @@ class ImageCanvas(QWidget):
             self.viewer.camera.center = (phys_row / 2.0, phys_col / 2.0)
             fit_zoom = 0.90 * min(vw / max(1e-6, phys_col), vh / max(1e-6, phys_row))
             self.viewer.camera.zoom = fit_zoom if self._zoom_mode == "fit" else fit_zoom * float(self._zoom_mode)
+            self._reposition_hover_info_label()
         except Exception:
             self.viewer.reset_view()
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1501,6 +1731,7 @@ class ReviewerMainWindow(QMainWindow):
         self._cortical_roi_source_ok = False
         self._cortical_cube_source_ok = False
         self._subcortical_source_ok = False
+        self._cortical_hover_label_map, self._subcortical_hover_label_map = load_hover_label_maps()
         # Layers
         self.raw_layer = self.seg_cortical_layer = None
         self.seg_subcortical_layer = self.cortical_layer = self.subcortical_layer = None
@@ -1599,6 +1830,61 @@ class ReviewerMainWindow(QMainWindow):
             layer.opacity = opacity
             layer.visible = visible
         return layer
+    def _derived_cortical_hover_visible(self) -> bool:
+        try:
+            return bool(self._show_seg_in_derived_views and self.cort_seg_cb.isChecked() and self.cortical_seg_layer is not None and self.cortical_seg_layer.visible)
+        except Exception:
+            return False
+
+    def _derived_subcortical_hover_visible(self) -> bool:
+        try:
+            return bool(self._show_seg_in_derived_views and self.sub_seg_cb.isChecked() and self.subcortical_seg_layer is not None and self.subcortical_seg_layer.visible)
+        except Exception:
+            return False
+
+    def _raw_cortical_hover_visible(self) -> bool:
+        try:
+            return bool(self.cort_seg_cb.isChecked() and self.seg_cortical_layer is not None and self.seg_cortical_layer.visible)
+        except Exception:
+            return False
+
+    def _raw_subcortical_hover_visible(self) -> bool:
+        try:
+            return bool(self.sub_seg_cb.isChecked() and self.seg_subcortical_layer is not None and self.seg_subcortical_layer.visible)
+        except Exception:
+            return False
+
+    def _bind_hover_label_overlays(self):
+        self.raw_canvas.set_hover_label_sources([
+            {
+                'layer': self.seg_subcortical_layer,
+                'label_map': self._subcortical_hover_label_map,
+                'visibility_getter': self._raw_subcortical_hover_visible,
+            },
+            {
+                'layer': self.seg_cortical_layer,
+                'label_map': self._cortical_hover_label_map,
+                'visibility_getter': self._raw_cortical_hover_visible,
+            },
+        ])
+        self.cortical_canvas.set_hover_label_source(
+            self.cortical_seg_layer,
+            self._cortical_hover_label_map,
+            visibility_getter=self._derived_cortical_hover_visible,
+        )
+        self.subcortical_canvas.set_hover_label_source(
+            self.subcortical_seg_layer,
+            self._subcortical_hover_label_map,
+            visibility_getter=self._derived_subcortical_hover_visible,
+        )
+
+    def _refresh_hover_label_overlays(self):
+        for canvas in (self.raw_canvas, self.cortical_canvas, self.subcortical_canvas):
+            try:
+                canvas.refresh_hover_label()
+            except Exception:
+                canvas.clear_hover_info()
+
     # ── menu ─────────────────────────────────────────────────────────────────
     def _build_menu(self):
         from qtpy.QtWidgets import QActionGroup
@@ -2737,6 +3023,7 @@ class ReviewerMainWindow(QMainWindow):
         self.cortical_seg_layer = self._update_label_layer('cortical_seg_layer', self.cortical_canvas, data['cortical_seg'], name='cortical_labels', scale=sc, opacity=opacity, visible=self.cort_seg_cb.isChecked() and self._show_seg_in_derived_views)
         self.subcortical_layer = self._update_image_layer('subcortical_layer', self.subcortical_canvas, sub, name='subcortical_qsm', scale=sc, contrast_limits=sub_limits)
         self.subcortical_seg_layer = self._update_label_layer('subcortical_seg_layer', self.subcortical_canvas, data['subcortical_seg'], name='subcortical_labels', scale=sc, opacity=opacity, visible=self.sub_seg_cb.isChecked() and self._show_seg_in_derived_views)
+        self._bind_hover_label_overlays()
         for key, path in data.get('generated_paths', {}).items():
             setattr(self.cases[self.case_index], key, path)
         self._apply_orientation(force_mid=True)
