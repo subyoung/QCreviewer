@@ -23,6 +23,7 @@ icon_ico = os.path.join(project_dir, "app.ico")
 icon_icns = os.path.join(project_dir, "app.icns")
 logo_png = os.path.join(project_dir, "logo.png")
 
+
 # -----------------------------------------------------------------------------
 # Hidden imports
 # -----------------------------------------------------------------------------
@@ -90,6 +91,15 @@ if os.path.exists(icon_ico):
 if os.path.exists(icon_icns):
     datas.append((icon_icns, "."))
 
+cortical_labels_txt = os.path.join(project_dir, "cortical_labels.txt")
+subcortical_labels_txt = os.path.join(project_dir, "subcortical_labels.txt")
+
+if os.path.exists(cortical_labels_txt):
+    datas.append((cortical_labels_txt, "."))
+
+if os.path.exists(subcortical_labels_txt):
+    datas.append((subcortical_labels_txt, "."))
+    
 # Deduplicate lists a bit
 hiddenimports = list(dict.fromkeys(hiddenimports))
 datas = list(dict.fromkeys(datas))

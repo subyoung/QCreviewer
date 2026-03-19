@@ -1,6 +1,6 @@
 """
-QSM QC Reviewer v20
-New features: Floating labels for imaging directions
+QSM QC Reviewer v21
+New features: Label descriptions can be loaded from external text files in ITK-SNAP format, with a fallback search for bundled defaults.  See the "Change Label Descriptions" dialog for details and instructions.
 =====================
 A napari-based viewer for quality control of QSM processing results, designed to be used in conjunction with the UK Biobank QSM pipeline.  This viewer is intended
 to be used by trained human raters to visually assess the quality of QSM outputs and assign categorical quality scores, which can then be exported in a CSV file for downstream analysis.  The viewer provides a multi-panel layout with linked navigation, allowing users to easily compare different image contrasts and segmentations for each case.  The UI includes options for adjusting brightness/contrast, toggling segmentation overlays, and adding free-form notes for each case.  The viewer is built using the napari framework for fast multi-dimensional image visualization, and PyQt for the UI components.  It is designed to be flexible and extensible, allowing for future additions such as new QC criteria or support for additional file formats.
@@ -124,8 +124,103 @@ _ALL_CORTICAL_LABELS = sorted(
 CORTICAL_LABELS_FILENAME = "cortical_labels.txt"
 SUBCORTICAL_LABELS_FILENAME = "subcortical_labels.txt"
 
-def _label_files_dir() -> Path:
-    return Path(__file__).resolve().parent
+_LABEL_DESCRIPTION_OVERRIDE_PATHS: Dict[str, Optional[Path]] = {
+    "cortical": None,
+    "subcortical": None,
+}
+
+def _app_base_dir() -> Path:
+    try:
+        return Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+    except Exception:
+        return Path(__file__).resolve().parent
+
+def _pyinstaller_temp_dir() -> Optional[Path]:
+    try:
+        base = getattr(sys, "_MEIPASS", None)
+        return Path(base).resolve() if base else None
+    except Exception:
+        return None
+
+def _default_label_file_candidates(filename: str) -> List[Path]:
+    candidates: List[Path] = []
+    seen = set()
+
+    def _add(path_like):
+        if not path_like:
+            return
+        try:
+            path = Path(path_like).resolve()
+        except Exception:
+            return
+        key = str(path)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(path)
+
+    app_dir = _app_base_dir()
+    meipass_dir = _pyinstaller_temp_dir()
+    script_dir = Path(__file__).resolve().parent
+
+    _add(app_dir / filename)
+    _add(app_dir / "resources" / filename)
+    if meipass_dir is not None:
+        _add(meipass_dir / filename)
+        _add(meipass_dir / "resources" / filename)
+    _add(script_dir / filename)
+    _add(script_dir / "resources" / filename)
+    return candidates
+
+def get_default_label_description_paths() -> Dict[str, Optional[Path]]:
+    resolved: Dict[str, Optional[Path]] = {"cortical": None, "subcortical": None}
+    for key, filename in (
+        ("cortical", CORTICAL_LABELS_FILENAME),
+        ("subcortical", SUBCORTICAL_LABELS_FILENAME),
+    ):
+        for cand in _default_label_file_candidates(filename):
+            if cand.exists():
+                resolved[key] = cand
+                break
+    return resolved
+
+def get_effective_label_description_paths() -> Dict[str, Optional[Path]]:
+    defaults = get_default_label_description_paths()
+    resolved: Dict[str, Optional[Path]] = {}
+    for key in ("cortical", "subcortical"):
+        override = _LABEL_DESCRIPTION_OVERRIDE_PATHS.get(key)
+        if override is not None:
+            try:
+                override = Path(override).expanduser().resolve()
+            except Exception:
+                override = None
+        resolved[key] = override if (override is not None and override.exists()) else defaults.get(key)
+    return resolved
+
+def set_label_description_override_paths(cortical_path: Optional[str] = None,
+                                         subcortical_path: Optional[str] = None,
+                                         use_default: bool = False) -> None:
+    global _LABEL_DESCRIPTION_OVERRIDE_PATHS
+    if use_default:
+        _LABEL_DESCRIPTION_OVERRIDE_PATHS = {"cortical": None, "subcortical": None}
+        return
+
+    def _norm(path_str: Optional[str]) -> Optional[Path]:
+        raw = (path_str or "").strip()
+        if not raw:
+            return None
+        try:
+            return Path(raw).expanduser().resolve()
+        except Exception:
+            return None
+
+    _LABEL_DESCRIPTION_OVERRIDE_PATHS = {
+        "cortical": _norm(cortical_path),
+        "subcortical": _norm(subcortical_path),
+    }
+
+def using_default_label_description_paths() -> bool:
+    return all(v is None for v in _LABEL_DESCRIPTION_OVERRIDE_PATHS.values())
 
 def _parse_itksnap_visible_label_file(path: Path) -> Dict[int, str]:
     mapping: Dict[int, str] = {}
@@ -150,9 +245,11 @@ def _parse_itksnap_visible_label_file(path: Path) -> Dict[int, str]:
     return mapping
 
 def load_hover_label_maps() -> Tuple[Dict[int, str], Dict[int, str]]:
-    root = _label_files_dir()
-    cortical = _parse_itksnap_visible_label_file(root / CORTICAL_LABELS_FILENAME)
-    subcortical = _parse_itksnap_visible_label_file(root / SUBCORTICAL_LABELS_FILENAME)
+    paths = get_effective_label_description_paths()
+    cortical_path = paths.get("cortical")
+    subcortical_path = paths.get("subcortical")
+    cortical = _parse_itksnap_visible_label_file(cortical_path) if cortical_path else {}
+    subcortical = _parse_itksnap_visible_label_file(subcortical_path) if subcortical_path else {}
     return cortical, subcortical
 
 # ── Orientation tables (unchanged from v9) ────────────────────────────────────
@@ -498,6 +595,142 @@ def _make_logo_pixmap(size: int = 22) -> QPixmap:
     painter.drawText(rect, Qt.AlignCenter, "Q")
     painter.end()
     return pix
+
+class LabelDescriptionConfigDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Change Label Descriptions")
+        self.setWindowIcon(_make_app_icon())
+        self.setModal(True)
+        self.setMinimumWidth(560 if _IS_WINDOWS else 680)
+        self.setStyleSheet(_GLOBAL_CSS)
+
+        paths = get_effective_label_description_paths()
+        defaults = get_default_label_description_paths()
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(16, 12, 16, 12)
+        lay.setSpacing(10)
+
+        title = QLabel("Label description files")
+        title.setStyleSheet(f"font-size:{_BASE_PT + 2}pt; font-weight:700; color:{_C_ACCENT};")
+        lay.addWidget(title)
+
+        hint = QLabel(
+            "Choose custom cortical and subcortical label description files, or use the default bundled files."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+        lay.addWidget(hint)
+
+        self.use_default_cb = QCheckBox("Use default label descriptions")
+        self.use_default_cb.setChecked(using_default_label_description_paths())
+        lay.addWidget(self.use_default_cb)
+
+        box = QGroupBox("Files")
+        box_lay = QVBoxLayout(box)
+        box_lay.setContentsMargins(10, 12, 10, 10)
+        box_lay.setSpacing(8)
+
+        self.cortical_edit = QLineEdit(str(paths.get("cortical") or ""))
+        self.subcortical_edit = QLineEdit(str(paths.get("subcortical") or ""))
+
+        for label_text, edit, browse_cb in (
+            ("Cortical labels:", self.cortical_edit, self._browse_cortical),
+            ("Subcortical labels:", self.subcortical_edit, self._browse_subcortical),
+        ):
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            lbl = QLabel(label_text)
+            lbl.setMinimumWidth(130)
+            lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            btn = QPushButton("Browse…")
+            btn.setMinimumWidth(84)
+            btn.clicked.connect(browse_cb)
+            row.addWidget(lbl)
+            row.addWidget(edit, 1)
+            row.addWidget(btn)
+            box_lay.addLayout(row)
+
+        self.default_info = QLabel()
+        self.default_info.setWordWrap(True)
+        self.default_info.setStyleSheet(f"color:{_C_DIM}; font-size:{_SMALL_PT}pt;")
+        default_cort = str(defaults.get("cortical") or "(not found)")
+        default_sub = str(defaults.get("subcortical") or "(not found)")
+        self.default_info.setText(
+            f"Default cortical: {default_cort}\nDefault subcortical: {default_sub}"
+        )
+        box_lay.addWidget(self.default_info)
+        lay.addWidget(box)
+
+        btns = QDialogButtonBox()
+        self.apply_btn = btns.addButton("Apply", QDialogButtonBox.AcceptRole)
+        cancel_btn = btns.addButton("Cancel", QDialogButtonBox.RejectRole)
+        self.apply_btn.clicked.connect(self._on_apply)
+        cancel_btn.clicked.connect(self.reject)
+        lay.addWidget(btns)
+
+        self.use_default_cb.toggled.connect(self._on_use_default_toggled)
+        self._on_use_default_toggled(self.use_default_cb.isChecked())
+
+    def _browse_file(self, edit: QLineEdit, title: str):
+        start = edit.text().strip()
+        if not start:
+            defaults = get_default_label_description_paths()
+            start = str((defaults.get("cortical") or defaults.get("subcortical") or _app_base_dir()))
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            title,
+            start,
+            "Text files (*.txt);;All files (*)",
+        )
+        if path:
+            edit.setText(path)
+
+    def _browse_cortical(self):
+        self._browse_file(self.cortical_edit, "Select cortical label description file")
+
+    def _browse_subcortical(self):
+        self._browse_file(self.subcortical_edit, "Select subcortical label description file")
+
+    def _on_use_default_toggled(self, checked: bool):
+        self.cortical_edit.setEnabled(not checked)
+        self.subcortical_edit.setEnabled(not checked)
+
+    def _on_apply(self):
+        if self.use_default_cb.isChecked():
+            self.accept()
+            return
+
+        missing = []
+        for name, edit in (("cortical", self.cortical_edit), ("subcortical", self.subcortical_edit)):
+            path = edit.text().strip()
+            if not path:
+                missing.append(name)
+                continue
+            if not Path(path).expanduser().exists():
+                QMessageBox.warning(self, "File not found", f"The selected {name} label file does not exist:\n{path}")
+                return
+
+        if missing:
+            QMessageBox.warning(
+                self,
+                "Missing files",
+                "Please select both cortical and subcortical label description files, or enable 'Use default label descriptions'.",
+            )
+            return
+        self.accept()
+
+    def selected_paths(self) -> Dict[str, Optional[str]]:
+        if self.use_default_cb.isChecked():
+            return {"use_default": True, "cortical": None, "subcortical": None}
+        return {
+            "use_default": False,
+            "cortical": self.cortical_edit.text().strip() or None,
+            "subcortical": self.subcortical_edit.text().strip() or None,
+        }
+
+
 class StartupConfigDialog(QDialog):
     def __init__(self, parent=None, defaults_root: str = CASES_ROOT,
                  defaults_output_csv: str = OUTPUT_CSV,
@@ -1975,6 +2208,10 @@ class ReviewerMainWindow(QMainWindow):
         act_contrast.triggered.connect(self.contrast_dlg.show)
         vm.addAction(act_contrast)
 
+        act_label_desc = QAction("Change label descriptions…", self)
+        act_label_desc.triggered.connect(self._on_change_label_descriptions)
+        vm.addAction(act_label_desc)
+
         vm.addSeparator()
         self._act_show_seg_derived = QAction(
             "Show segmentation in cortical/subcortical QSM", self,
@@ -2073,6 +2310,25 @@ class ReviewerMainWindow(QMainWindow):
         if dlg.exec_() != QDialog.Accepted or dlg.config is None:
             return
         self._apply_config_change(dlg.config)
+
+
+    def _on_change_label_descriptions(self):
+        dlg = LabelDescriptionConfigDialog(self)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        selected = dlg.selected_paths()
+        set_label_description_override_paths(
+            cortical_path=selected.get("cortical"),
+            subcortical_path=selected.get("subcortical"),
+            use_default=bool(selected.get("use_default")),
+        )
+        self._reload_label_description_maps()
+        self._set_status("Label descriptions updated", _C_SUCCESS)
+
+    def _reload_label_description_maps(self):
+        self._cortical_hover_label_map, self._subcortical_hover_label_map = load_hover_label_maps()
+        self._bind_hover_label_overlays()
+        self._refresh_hover_label_overlays()
 
     def _apply_config_change(self, new_cfg: 'AppConfig'):
         """Diff new vs old config and apply the minimal necessary update."""
