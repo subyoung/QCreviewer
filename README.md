@@ -41,9 +41,7 @@ The app also supports automatic generation and optional saving of derived QSM im
 ## Screenshots
 
 ### Main reviewer interface
-<p align="center">
-  <img src="docs/images/main-interface.png" alt="Main Interface" width="1000">
-</p>
+
 
 ### Path setup window
 <p align="center">
