@@ -300,6 +300,10 @@ QCreviewer/
 ├─ QCreviewer.py
 ├─ README.md
 ├─ app.ico
+├─ app.icnc
+├─ logo.png
+├─ cortical_labels.txt
+├─ subcortical_labels.txt
 ├─ QCreviewer.spec
 ├─ build_qsm_qc_reviewer.bat
 ├─ docs
