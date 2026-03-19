@@ -1658,7 +1658,7 @@ class ImageCanvas(QWidget):
         ph = max(0, parent.height())
         if pw <= 0 or ph <= 0:
             return
-        edge_margin = 3 if _IS_WINDOWS else 12
+        edge_margin = 3 if _IS_WINDOWS else 6
         center_x = pw // 2
         center_y = ph // 2
         positions = {
