@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "QCreviewer",
+      "runtimeExecutable": "conda",
+      "env": {"CONDA_DEFAULT_ENV": "qcreviewer"},
+      "runtimeArgs": ["run", "-n", "qcreviewer", "python", "QCreviewer.py"],
+      "port": 0
+    }
+  ]
+}
