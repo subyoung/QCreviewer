@@ -1444,6 +1444,17 @@ class ImageCanvas(QWidget):
         self._hover_info_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._hover_info_label.hide()
 
+        self._intensity_info_label = QLabel(self._hover_overlay_parent)
+        self._intensity_info_label.setStyleSheet(
+            f"background: rgba(10, 12, 16, 180); color:{_C_TEXT}; "
+            f"border:1px solid {_C_BORDER}; border-radius:4px; "
+            f"padding:{2 if _IS_WINDOWS else 4}px {5 if _IS_WINDOWS else 8}px; "
+            f"font-size:{_SMALL_PT}pt;"
+        )
+        self._intensity_info_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._intensity_info_label.hide()
+        self._intensity_layer = None
+
         self._dir_overlay_visible = True
         self._dir_overlay_labels = {}
         dir_style = (
@@ -1615,6 +1626,70 @@ class ImageCanvas(QWidget):
         if getattr(self, '_hover_info_label', None) is not None:
             self._hover_info_label.clear()
             self._hover_info_label.hide()
+        if getattr(self, '_intensity_info_label', None) is not None:
+            self._intensity_info_label.hide()
+
+    def set_intensity_layer(self, layer):
+        self._intensity_layer = layer
+
+    def _sample_intensity_value(self):
+        layer = getattr(self, '_intensity_layer', None)
+        if layer is None:
+            return None
+        world_pos = getattr(getattr(self.viewer_model, 'cursor', None), 'position', None)
+        if world_pos is None:
+            return None
+        data = getattr(layer, 'data', None)
+        if data is None:
+            return None
+        data_pos = None
+        if hasattr(layer, 'world_to_data'):
+            try:
+                data_pos = layer.world_to_data(world_pos)
+            except Exception:
+                data_pos = None
+        if data_pos is None:
+            data_pos = world_pos
+        arr = np.asarray(data_pos, dtype=float).reshape(-1)
+        ndim = int(getattr(data, 'ndim', 0) or 0)
+        if ndim <= 0:
+            return None
+        if arr.size != ndim:
+            current = list(getattr(self.viewer_model.dims, 'current_step', ()) or ())
+            if len(current) < ndim:
+                current.extend([0] * (ndim - len(current)))
+            for i in range(min(arr.size, ndim)):
+                current[i] = arr[i]
+            arr = np.asarray(current[:ndim], dtype=float)
+        shape = tuple(int(v) for v in getattr(data, 'shape', ()))
+        if len(shape) != ndim:
+            return None
+        idx = []
+        for axis, val in enumerate(arr):
+            if not np.isfinite(val):
+                return None
+            vox = int(np.floor(float(val) + 1e-6))
+            if vox < 0 or vox >= shape[axis]:
+                return None
+            idx.append(vox)
+        try:
+            return float(data[tuple(idx)])
+        except Exception:
+            return None
+
+    def _refresh_intensity_label(self):
+        int_lbl = getattr(self, '_intensity_info_label', None)
+        if int_lbl is None:
+            return
+        val = self._sample_intensity_value()
+        if val is None:
+            int_lbl.hide()
+        else:
+            text = f"{val:.4f}"
+            if int_lbl.text() != text:
+                int_lbl.setText(text)
+                int_lbl.adjustSize()
+            int_lbl.show()
 
     def set_direction_overlay_visible(self, visible: bool):
         self._dir_overlay_visible = bool(visible)
@@ -1631,22 +1706,38 @@ class ImageCanvas(QWidget):
         self._reposition_direction_overlay_labels()
 
     def _reposition_hover_info_label(self):
-        lbl = getattr(self, '_hover_info_label', None)
-        if lbl is None:
+        seg_lbl = getattr(self, '_hover_info_label', None)
+        int_lbl = getattr(self, '_intensity_info_label', None)
+        if seg_lbl is None and int_lbl is None:
             return
         margin = 6 if _IS_WINDOWS else 10
-        try:
-            lbl.adjustSize()
-        except Exception:
-            pass
+        gap = 4
         parent = getattr(self, '_hover_overlay_parent', None) or self.qt_viewer
         pw = max(0, parent.width())
         ph = max(0, parent.height())
-        x = min(margin, max(0, pw - lbl.width() - margin)) if pw else margin
-        x = max(margin, x)
-        y = max(margin, ph - lbl.height() - margin)
-        lbl.move(x, y)
-        lbl.raise_()
+        # Position seg label at bottom-left
+        if seg_lbl is not None:
+            try:
+                seg_lbl.adjustSize()
+            except Exception:
+                pass
+            x = margin
+            y = max(margin, ph - seg_lbl.height() - margin)
+            seg_lbl.move(x, y)
+            seg_lbl.raise_()
+        # Position intensity label: above seg label when visible, else at bottom-left
+        if int_lbl is not None:
+            try:
+                int_lbl.adjustSize()
+            except Exception:
+                pass
+            x = margin
+            if seg_lbl is not None and seg_lbl.isVisible():
+                y = max(margin, seg_lbl.y() - int_lbl.height() - gap)
+            else:
+                y = max(margin, ph - int_lbl.height() - margin)
+            int_lbl.move(x, y)
+            int_lbl.raise_()
         self._reposition_direction_overlay_labels()
 
     def _reposition_direction_overlay_labels(self):
@@ -1771,17 +1862,21 @@ class ImageCanvas(QWidget):
 
     def refresh_hover_label(self):
         result = self._sample_hover_label_value()
-        if result is None:
-            self.clear_hover_info()
-            return
-        label_val, label_name = result
-        text = f"{label_val} · {label_name}"
-        if self._hover_info_label.text() != text:
-            self._hover_info_label.setText(text)
-            self._hover_info_label.adjustSize()
+        seg_lbl = getattr(self, '_hover_info_label', None)
+        if seg_lbl is not None:
+            if result is None:
+                seg_lbl.clear()
+                seg_lbl.hide()
+            else:
+                label_val, label_name = result
+                text = f"{label_val} · {label_name}"
+                if seg_lbl.text() != text:
+                    seg_lbl.setText(text)
+                    seg_lbl.adjustSize()
+                seg_lbl.show()
+                seg_lbl.raise_()
+        self._refresh_intensity_label()
         self._reposition_hover_info_label()
-        self._hover_info_label.show()
-        self._hover_info_label.raise_()
 
     def eventFilter(self, obj, event):
         hover_parent = getattr(self, '_hover_overlay_parent', None)
@@ -1918,6 +2013,7 @@ class ImageCanvas(QWidget):
         self.viewer.layers.clear()
         self.clear_hover_info()
         self._hover_sources = []
+        self._intensity_layer = None
 
     def add_image(self, *a, **kw): return self.viewer.add_image(*a, **kw)
     def add_labels(self, *a, **kw): return self.viewer.add_labels(*a, **kw)
@@ -2158,6 +2254,7 @@ class ReviewerMainWindow(QMainWindow):
             return False
 
     def _bind_hover_label_overlays(self):
+        self.raw_canvas.set_intensity_layer(self.raw_layer)
         self.raw_canvas.set_hover_label_sources([
             {
                 'layer': self.seg_subcortical_layer,
@@ -2170,11 +2267,13 @@ class ReviewerMainWindow(QMainWindow):
                 'visibility_getter': self._raw_cortical_hover_visible,
             },
         ])
+        self.cortical_canvas.set_intensity_layer(self.cortical_layer)
         self.cortical_canvas.set_hover_label_source(
             self.cortical_seg_layer,
             self._cortical_hover_label_map,
             visibility_getter=self._derived_cortical_hover_visible,
         )
+        self.subcortical_canvas.set_intensity_layer(self.subcortical_layer)
         self.subcortical_canvas.set_hover_label_source(
             self.subcortical_seg_layer,
             self._subcortical_hover_label_map,
