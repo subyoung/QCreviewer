@@ -24,3 +24,11 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Claude Code
+.claude/worktrees/
+.claude/tasks/
+
+# Build artifacts
+*.zip
+*.spec
