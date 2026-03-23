@@ -2881,7 +2881,7 @@ class ReviewerMainWindow(QMainWindow):
         qce_lay.addWidget(qce_lbl)
         hint = QLabel("hover to view")
         hint.setStyleSheet(
-            f"color: {_C_DIM}; font-size: {_SMALL_PT - (-1 if _IS_WINDOWS else 1)}pt; "
+            f"color: {_C_DIM}; font-size: {_SMALL_PT - (-1 if _IS_WINDOWS else -2)}pt; "
             "border: none; background: transparent;"
         )
         hint.setAttribute(Qt.WA_TransparentForMouseEvents, True)
