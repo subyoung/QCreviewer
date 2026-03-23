@@ -2057,7 +2057,197 @@ class ImageCanvas(QWidget):
         except Exception:
             self.viewer.reset_view()
 # ─────────────────────────────────────────────────────────────────────────────
-# Main window
+# QC Grading Criteria floating overlay
+# ─────────────────────────────────────────────────────────────────────────────
+class _QCRulesOverlay(QFrame):
+    """Floating panel that shows QC grading criteria, triggered by hovering
+    the entry label in the info panel.  It is a child of the central widget
+    and is positioned in the centre of the window."""
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(280)
+        self._hide_timer.timeout.connect(self.hide)
+
+        self.setObjectName("_QCRulesOverlay")
+        self.setStyleSheet(
+            "#_QCRulesOverlay {"
+            f"  background: {_C_PANEL};"
+            f"  border: 1px solid {_C_ACCENT}66;"
+            "  border-radius: 8px;"
+            "}"
+        )
+        pad = 4 if _IS_WINDOWS else 10
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(pad, pad, pad, pad)
+        lay.setSpacing(3 if _IS_WINDOWS else 6)
+
+        # Title
+        title = QLabel("QC Grading Criteria")
+        title.setStyleSheet(
+            f"font-size: {_BASE_PT + (0 if _IS_WINDOWS else 2)}pt; "
+            f"font-weight: bold; color: {_C_TEXT}; "
+            f"padding: {2 if _IS_WINDOWS else 4}px {4 if _IS_WINDOWS else 6}px; "
+            "border: none; background: transparent;"
+        )
+        lay.addWidget(title)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet(f"color: {_C_BORDER};")
+        lay.addWidget(sep)
+
+        browser = QTextEdit()
+        browser.setReadOnly(True)
+        browser.setHtml(self._build_html())
+        _content_pt = _SMALL_PT if _IS_WINDOWS else _SMALL_PT + 2
+        browser.setStyleSheet(
+            f"QTextEdit {{ background: transparent; border: none; "
+            f"color: {_C_TEXT}; font-size: {_content_pt}pt; }}"
+            "QScrollBar:vertical { width: 8px; }"
+        )
+        browser.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        browser.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        lay.addWidget(browser)
+
+        self.hide()
+
+    @staticmethod
+    def _build_html() -> str:
+        bg_hdr = "#1e2128"
+        c_acc  = _C_ACCENT
+        c_brd  = _C_BORDER
+        c_txt  = _C_TEXT
+        c_dim  = _C_DIM
+        fpt      = _SMALL_PT if _IS_WINDOWS else _SMALL_PT + 3
+        cell_pad = "4px 8px" if _IS_WINDOWS else "6px 10px"
+        col_gn   = 40 if _IS_WINDOWS else 60
+        col_gl   = 140 if _IS_WINDOWS else 168
+        return f"""
+<style type="text/css">
+  body  {{ margin:0; color:{c_txt}; font-size:{fpt}pt; }}
+  table {{ border-collapse:collapse; width:100%; }}
+  th    {{ background:{bg_hdr}; color:{c_acc}; font-weight:bold;
+           border:1px solid {c_brd}; padding:{cell_pad}; text-align:center; }}
+  td    {{ border:1px solid {c_brd}; padding:{cell_pad}; vertical-align:top; color:{c_txt}; }}
+  td.gn {{ text-align:center; font-weight:bold; color:{c_acc}; font-size:{fpt+2}pt;
+           white-space:nowrap; }}
+  td.gl {{ color:{c_dim}; font-style:italic; }}
+  ul    {{ margin:2px 0 0 0; padding-left:{16 if _IS_WINDOWS else 18}px; }}
+  li    {{ margin:{2 if _IS_WINDOWS else 3}px 0; }}
+</style>
+<table>
+<tr>
+  <th width="{col_gn}">Grade</th>
+  <th width="{col_gl}">&nbsp;</th>
+  <th>Cortical</th>
+  <th>Subcortical</th>
+</tr>
+<tr>
+  <td class="gn">0</td>
+  <td class="gl">no motion artifact</td>
+  <td>No cortical ROI affected</td>
+  <td><b>No artifact affecting subcortical ROIs</b>
+    <ul>
+      <li>No target subcortical structures are affected.</li>
+      <li>Boundaries are preserved.</li>
+      <li>Quantitative ROI extraction is trustworthy.</li>
+    </ul>
+  </td>
+</tr>
+<tr>
+  <td class="gn">1</td>
+  <td class="gl">mild motion artifact</td>
+  <td><ul>
+    <li>Artifact is focal or <b>mild</b></li>
+    <li>Cortical ROIs remain trustworthy</li>
+    <li><b>Minor edge blur</b>/streaking only</li>
+  </ul></td>
+  <td><b>Mild artifact affecting only limited/small ROIs</b>
+    <ul>
+      <li>Major high-priority structures remain unaffected and trustworthy,
+        such as <b>caudate, putamen, globus pallidus, thalamus, dentate</b>.</li>
+      <li>Artifact affects only <b>small and/or artifact-prone structures</b>,
+        such as <b>accumbens, substantia nigra, red nucleus, pulvinar</b>,
+        or affects only a small portion of a target ROI.</li>
+      <li>Overall quantitative extraction for the main subcortical analysis
+        remains trustworthy.</li>
+    </ul>
+  </td>
+</tr>
+<tr>
+  <td class="gn">2</td>
+  <td class="gl">motion artifact affecting image contrast of internal structures</td>
+  <td><ul>
+    <li>Artifact affects <b>one or more meaningful cortical regions</b></li>
+    <li>Cortical ribbon or local ROI interpretation becomes questionable</li>
+    <li><b>Values may be biased</b></li>
+  </ul></td>
+  <td><b>Artifact affecting important ROIs, with possible bias</b>
+    <ul>
+      <li><b>Multiple ROIs</b>, or at least <b>one major/high-priority ROI</b>,
+        are affected.</li>
+      <li>Boundaries may still be partly visible, but measurements may be
+        biased or less reliable.</li>
+      <li>Deep anatomy is still interpretable overall, but quantitative ROI
+        extraction should be used with caution.</li>
+    </ul>
+  </td>
+</tr>
+<tr>
+  <td class="gn">3</td>
+  <td class="gl">severe motion artifact affecting both superficial and deep structures</td>
+  <td><ul>
+    <li><b>Widespread</b> cortical ROIs are not trustworthy</li>
+    <li>Ribbon anatomy is <b>severely</b> degraded</li>
+    <li><b>Quantitative cortical analysis is invalid</b></li>
+  </ul></td>
+  <td><b>Severe artifact, subcortical analysis unreliable</b>
+    <ul>
+      <li>Multiple ROIs are not trustworthy.</li>
+      <li>Boundaries are lost, deep anatomy is severely distorted, or several
+        key ROIs cannot be confidently identified.</li>
+      <li>Quantitative ROI extraction is likely scientifically invalid.</li>
+    </ul>
+  </td>
+</tr>
+</table>"""
+
+    def show_centered(self):
+        """Compute centre of parent, resize, and show."""
+        self._hide_timer.stop()
+        parent = self.parent()
+        if parent is None:
+            return
+        pw, ph = parent.width(), parent.height()
+        if _IS_WINDOWS:
+            w = min(max(int(pw * 0.72), 480), 980)
+            h = min(max(int(ph * 0.64), 320), 640)
+        else:
+            w = min(max(int(pw * 0.80), 560), 1100)
+            h = min(max(int(ph * 0.72), 400), 740)
+        self.resize(w, h)
+        self.move(max(0, (pw - w) // 2), max(0, (ph - h) // 2))
+        self.raise_()
+        self.show()
+
+    def schedule_hide(self):
+        self._hide_timer.start()
+
+    def cancel_hide(self):
+        self._hide_timer.stop()
+
+    # Keep visible while cursor is inside the popup itself
+    def enterEvent(self, event):
+        self._hide_timer.stop()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.hide()
+        super().leaveEvent(event)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main window
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2577,6 +2767,8 @@ class ReviewerMainWindow(QMainWindow):
             spl.splitterMoved.connect(lambda *_: self._fit_timer.start())
         # Deferred size setup
         QTimer.singleShot(0, self._init_splitter_sizes)
+        # QC Grading Criteria floating overlay (child of central widget)
+        self._qc_overlay = _QCRulesOverlay(self.centralWidget())
     def _init_splitter_sizes(self):
         w = self._main_splitter.width()
         if w <= 10:
@@ -2659,6 +2851,45 @@ class ReviewerMainWindow(QMainWindow):
         hotkey_lbl.setWordWrap(False)
         hl.addWidget(hotkey_lbl)
         lay.addWidget(hb)
+
+        # ── QC Grading Criteria entry ─────────────────────────────────────
+        qc_entry = QFrame()
+        qc_entry.setObjectName("_qcRulesEntry")
+        qc_entry.setStyleSheet(
+            "#_qcRulesEntry {"
+            f"  background: {_C_BG}; border: 1px solid {_C_BORDER};"
+            "  border-radius: 4px;"
+            "}"
+            "#_qcRulesEntry:hover {"
+            f"  border-color: {_C_ACCENT};"
+            "}"
+        )
+        qc_entry.setCursor(Qt.PointingHandCursor)
+        qce_lay = QHBoxLayout(qc_entry)
+        qce_lay.setContentsMargins(
+            4 if _IS_WINDOWS else 6,
+            2 if _IS_WINDOWS else 4,
+            4 if _IS_WINDOWS else 6,
+            2 if _IS_WINDOWS else 4,
+        )
+        qce_lbl = QLabel("▶  QC Grading Criteria")
+        qce_lbl.setStyleSheet(
+            f"color: {_C_ACCENT}; font-size: {_SMALL_PT}pt; "
+            "border: none; background: transparent;"
+        )
+        qce_lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        qce_lay.addWidget(qce_lbl)
+        hint = QLabel("hover to view")
+        hint.setStyleSheet(
+            f"color: {_C_DIM}; font-size: {_SMALL_PT - (1 if _IS_WINDOWS else 1)}pt; "
+            "border: none; background: transparent;"
+        )
+        hint.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        qce_lay.addStretch(1)
+        qce_lay.addWidget(hint)
+        qc_entry.installEventFilter(self)
+        self._qc_rules_entry = qc_entry
+        lay.addWidget(qc_entry)
 
         lay.addStretch(1)
 
@@ -3108,9 +3339,25 @@ class ReviewerMainWindow(QMainWindow):
         for canvas, data in self._canvas_data_pairs():
             if data is not None:
                 canvas.fit_to_shape(data.shape, self._dims_order, self._zooms, force=force)
+    def eventFilter(self, obj, event):
+        """Handle hover on the QC Grading Criteria entry label."""
+        entry   = getattr(self, '_qc_rules_entry', None)
+        overlay = getattr(self, '_qc_overlay', None)
+        if entry is not None and overlay is not None and obj is entry:
+            et = event.type()
+            if et == QEvent.Enter:
+                overlay.show_centered()
+            elif et == QEvent.Leave:
+                overlay.schedule_hide()
+        return super().eventFilter(obj, event)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._fit_timer.start()
+        # Reposition QC overlay if it is currently visible
+        ov = getattr(self, '_qc_overlay', None)
+        if ov is not None and ov.isVisible():
+            ov.show_centered()
     # ── shortcuts ─────────────────────────────────────────────────────────────
     def _bind_shortcuts(self):
         for c in self._all_canvases():
