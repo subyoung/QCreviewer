@@ -2102,7 +2102,7 @@ class _QCRulesOverlay(QFrame):
         browser = QTextEdit()
         browser.setReadOnly(True)
         browser.setHtml(self._build_html())
-        _content_pt = _SMALL_PT if _IS_WINDOWS else _SMALL_PT + 2
+        _content_pt = _BASE_PT + 1 if _IS_WINDOWS else _SMALL_PT + 2
         browser.setStyleSheet(
             f"QTextEdit {{ background: transparent; border: none; "
             f"color: {_C_TEXT}; font-size: {_content_pt}pt; }}"
@@ -2121,10 +2121,10 @@ class _QCRulesOverlay(QFrame):
         c_brd  = _C_BORDER
         c_txt  = _C_TEXT
         c_dim  = _C_DIM
-        fpt      = _SMALL_PT if _IS_WINDOWS else _SMALL_PT + 3
-        cell_pad = "4px 8px" if _IS_WINDOWS else "6px 10px"
-        col_gn   = 40 if _IS_WINDOWS else 60
-        col_gl   = 140 if _IS_WINDOWS else 168
+        fpt      = _BASE_PT + 1 if _IS_WINDOWS else _SMALL_PT + 3
+        cell_pad = "5px 8px" if _IS_WINDOWS else "6px 10px"
+        col_gn   = 52 if _IS_WINDOWS else 60
+        col_gl   = 155 if _IS_WINDOWS else 168
         return f"""
 <style type="text/css">
   body  {{ margin:0; color:{c_txt}; font-size:{fpt}pt; }}
@@ -2223,8 +2223,8 @@ class _QCRulesOverlay(QFrame):
             return
         pw, ph = parent.width(), parent.height()
         if _IS_WINDOWS:
-            w = min(max(int(pw * 0.72), 480), 980)
-            h = min(max(int(ph * 0.64), 320), 640)
+            w = min(max(int(pw * 0.76), 520), 1040)
+            h = min(max(int(ph * 0.68), 360), 680)
         else:
             w = min(max(int(pw * 0.80), 560), 1100)
             h = min(max(int(ph * 0.72), 400), 740)
