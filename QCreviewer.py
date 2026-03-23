@@ -2874,14 +2874,14 @@ class ReviewerMainWindow(QMainWindow):
         )
         qce_lbl = QLabel("▶  QC Grading Criteria")
         qce_lbl.setStyleSheet(
-            f"color: {_C_ACCENT}; font-size: {_SMALL_PT}pt; "
+            f"color: {_C_ACCENT}; font-size: {_SMALL_PT + 1}pt; "
             "border: none; background: transparent;"
         )
         qce_lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         qce_lay.addWidget(qce_lbl)
         hint = QLabel("hover to view")
         hint.setStyleSheet(
-            f"color: {_C_DIM}; font-size: {_SMALL_PT - (1 if _IS_WINDOWS else 1)}pt; "
+            f"color: {_C_DIM}; font-size: {_SMALL_PT - (-1 if _IS_WINDOWS else 1)}pt; "
             "border: none; background: transparent;"
         )
         hint.setAttribute(Qt.WA_TransparentForMouseEvents, True)
